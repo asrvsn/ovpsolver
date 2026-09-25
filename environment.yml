@@ -1,0 +1,57 @@
+# The environment. This is the supported way to get one:
+#
+#     conda env create -f environment.yml
+#     conda activate ovpsolver
+#     # macOS only — Apple's BLAS; see environment.macos.yml
+#     conda env update -f environment.macos.yml
+#     pip install --no-build-isolation -ve .
+#
+# Everything the solve needs is here, because the FEniCSx stack is not reliably
+# pip-installable. `pyproject.toml` lists only the pure-Python packages on top,
+# so that `pip install .` into an environment made this way adds what it must and
+# assumes what conda already provided. The local package is not listed under
+# `pip:` either: that block writes a requirements file, and `--no-build-isolation`
+# is not a valid option there, which the nanobind extension needs so the build
+# sees conda's compilers, cmake, and OpenMP.
+#
+# One thing is deliberately not here. A mac can run the direct factorization
+# against Apple's BLAS instead of openblas, which no file read on every platform
+# can ask for; `environment.macos.yml` says why and is applied on top.
+name: ovpsolver
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - pip
+  - pytest
+
+  # Numerics
+  - numpy>=2.0
+  - scipy
+  - pyyaml
+  - tqdm
+
+  # FEniCSx, and the PETSc bindings the solver drives directly
+  - fenics-dolfinx>=0.10.0
+  - petsc4py
+  - mpi4py
+
+  # Meshing, and drawing what came out
+  - gmsh
+  - matplotlib
+  - seaborn
+  - colorcet
+  - pyvista
+
+  # Building the C++ extension. nanobind and OpenMP are all CMakeLists.txt looks
+  # for; vcpkg is honoured if VCPKG_ROOT happens to be set and is not needed.
+  - cmake
+  - ninja
+  - pkg-config
+  - scikit-build-core
+  - nanobind
+  - c-compiler
+  - cxx-compiler
+  - mpich
+  - llvm-openmp

@@ -1,0 +1,153 @@
+solver:
+  log_reg_delta: 1.0e-4
+  drag_measure_floor: 1.0e-3
+
+  diffuse_domain:
+    geometry: geometry_ovp.py
+    domain_eps: 0.025
+    mesh_h: 0.008
+    min_elements_across_interface_width: 5
+    mesh_algorithm: delaunay
+    inclusion_color: limegreen
+    indicator_quadrature_degree: 3
+    indicator_floor: 0.05
+    surface_permeability: 1.0e-5
+    flux_bc_quadrature: 3
+    inclusion_drag: 0.0
+    contact_angle_gradient_fitting: false
+    save: ["indicator"]
+
+  timestepping:
+    dt: 1.0e-3
+    warm_start_dt: 1.0e-4
+    n_steps: 400
+    cfl_positive_transport: 0.7
+    retry_cfl_timestep_fraction: 0.8
+    retry_diverged_timestep_fraction: 0.5
+    max_retries: 12
+    min_remainder_fraction: 0.1
+    positivity_floor_throw: -1.0e-10
+
+  ovp_step:
+    skip: false
+    snes_max_it: 10
+    snes_rtol: 1.0e-5
+    snes_atol: 1.0e-10
+    snes_monitor: true
+    excess_rayleighian_rtol: null
+    petsc_options:
+      snes_type: newtonls
+      snes_linesearch_type: cp
+      # The state/static split, as PETSc options; see ./tips.yaml for what each entry does (the static tolerance holds the constraints, so it is not a speed knob), and for the direct solve it replaces.
+      ksp_type: preonly
+      pc_type: fieldsplit
+      pc_fieldsplit_type: schur
+      pc_fieldsplit_schur_fact_type: full
+      pc_fieldsplit_schur_precondition: a11
+      fieldsplit_state_ksp_type: preonly
+      fieldsplit_state_pc_type: lu
+      fieldsplit_state_pc_factor_mat_solver_type: petsc
+      fieldsplit_static_ksp_type: gmres
+      fieldsplit_static_ksp_pc_side: right
+      fieldsplit_static_ksp_gmres_restart: 50
+      fieldsplit_static_ksp_rtol: 1.0e-8
+      fieldsplit_static_ksp_max_it: 500
+      fieldsplit_static_pc_type: cholesky
+      fieldsplit_static_pc_factor_mat_solver_type: mumps
+      snes_lag_jacobian: 1
+      snes_lag_preconditioner: 100
+
+  irreversible_step:
+    skip: false
+
+  save:
+    logfile: log.txt
+    path: ./scratch/pips_ovp
+    every_k: 1
+    resumable_every: 2
+    dtype: float64
+    debug: true
+
+system:
+  rng_seed: 0
+  initial_phase_noise_sigma: 0.0
+  k_B_T: 1.0
+  dilatational_viscosity: 1.0e+5
+  save: ["pressure", "total_phase"]
+
+  phase_fields:
+    sol:
+      - name: water
+        color: navy
+        initial_volume_fraction: 0.6
+        kappa: 1.0e-3
+        monomer_polymerization_degree: 1.0
+        monomer_volume: 1.0
+        diffusivity: 1.0
+        bulk_viscous_screening_length: 0.05
+        surface_viscous_screening_length: 0.0
+        bulk_affinity: 0.0
+        surface_affinity: 0.01
+        surface_drag: 1.0
+        surface_flux_density: 0.0
+        boundary_flux_density: 0.0
+        save: ["phi", "v", "aux_potential"]
+
+    polymerizing:
+      - name: protein
+        color: orange
+        color_sol: fuchsia
+        color_gel: limegreen
+        initial_volume_fraction: 0.4
+        kappa: 1.0e-3
+        monomer_polymerization_degree: 1.0
+        monomer_volume: 1.0
+        sol_diffusivity: 1.0
+        sol_bulk_viscous_screening_length: 0.05
+        gel_bulk_viscous_screening_length: 0.05
+        sol_surface_viscous_screening_length: 0.0
+        gel_surface_viscous_screening_length: 0.0
+        bulk_affinity_0: 0.0
+        bulk_affinity_1: 0.0
+        surface_affinity: -0.01
+        surface_sol_drag: 1.0
+        surface_sol_flux_density: 0.0
+        boundary_sol_flux_density: 0.0
+        monomer_functionality: 3
+        gelation_burgers_cfl: 0.5
+        cycle_shear_modulus: 5.0
+        crosslinking_rate: 6.944
+        surface_gel_drag: 1.0
+        boundary_gel_drag: 0.0
+        z_partition:
+          num_cells: 64
+          ratio: 1.05
+        save: [
+          "phi",
+          "v_s",
+          "v_g",
+          "aux_potential",
+          "phi_sol",
+          "phi_gel",
+          "reaction_extent",
+          "c_x",
+          "u_bar",
+          "u_trace",
+          "gel_shear_modulus",
+          "gel_strain_moment",
+          "gel_hydrostatic_stress",
+          "gel_deviatoric_stress",
+        ]
+
+  couplings:
+    flory_huggins:
+      (water, protein):
+        chi_00: 1.5
+        chi_01: 4.0
+    gel_entanglements:
+      hook_loop_capture_volume: {}
+    drag:
+      sol_gel:
+        (water, protein): 1.0
+        (protein, protein): 1.0
+      gel_gel: {}

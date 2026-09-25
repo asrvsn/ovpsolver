@@ -1,0 +1,56 @@
+# Local scratch and run output. The example specs save their runs under
+# examples/scratch/; none of it is part of the package.
+scratch/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Build. The extension is compiled by scikit-build-core from CMakeLists.txt.
+build/
+dist/
+_skbuild/
+*.so
+
+# Caches the toolchain can be pointed at beside the source: the ffcx/dolfinx JIT,
+# and matplotlib when MPLCONFIGDIR is set here to keep a run reproducible.
+.jitcache*/
+.mplconfig/
+
+# Logs, wherever a run writes one.
+*.log
+
+# macOS and editors
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Meshes. A run generates its mesh from the geometry file and archives it in its
+# own directory, so a mesh anywhere else is a leftover. The geometry file is not
+# ignored: it is small, and it is the record of where the inclusions were.
+*.xdmf
+*.h5
+
+# The biarc refit of a CAD source, and the report that doubles as its cache key.
+# fit_step_to_arcs derives both from the .step the geometry names, which is
+# tracked and is the record; these are what a tolerance produced from it, and a
+# different tolerance produces different ones. The .json carries the key the next
+# call compares against, so keeping it is worth roughly seven seconds a run and
+# nothing else. Deriving them again needs only the source and the parameters that
+# are already in the geometry file, and a run archive copies whatever it actually
+# used (fit_outputs), so nothing downstream depends on these being in the tree.
+*_fit.step
+*_fit.json
+
+# Frames a movie render was part way through. visualize.phases_movie renders into one
+# of these beside its output -- same filesystem, so the finished file lands by
+# rename rather than by copy -- and removes it on the way out, including when the
+# encode fails. What it cannot survive is the process being killed, which leaves
+# a directory of PNGs that is large, worthless, and next to a run.
+.ovpsolver-movie-*/

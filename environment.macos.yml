@@ -1,0 +1,48 @@
+# Apple's BLAS, on a mac. Layered onto the environment rather than named in it:
+#
+#     conda env update -f environment.macos.yml
+#
+# Neither of the two files that could carry a dependency can carry this one
+# conditionally. Conda reads `environment.yml` as YAML, so a conda-build
+# selector comment is stripped before the solver ever sees it and the dependency
+# would apply on every platform -- and there is no accelerate build for linux, so
+# the environment would stop solving there rather than quietly ignore it.
+# `pyproject.toml` has the conditional and not the package: a PEP 508 marker
+# expresses `sys_platform == "darwin"` exactly, but the BLAS is a conda package
+# with no pip equivalent, and pip cannot change which implementation conda's
+# `libblas` resolves to.
+#
+# Nothing is rebuilt by this, which is the part worth knowing. Every package that
+# calls BLAS -- petsc, mumps, numpy, scipy -- links the generic `libblas.3.dylib`
+# and conda swaps what that name resolves to, so the transaction is the three
+# interface packages and about a megabyte, with the solver stack untouched. The
+# one thing in it that is not BLAS is a `libgfortran` bump, which is the only
+# piece mumps itself links and so the only plausible way this breaks a run.
+# `conda install "libblas=*=*openblas"` puts it back.
+#
+# What it buys, and the thread setting that goes with it. Accelerate's dense
+# kernels reach the AMX units, which is where a direct factorization spends its
+# time. On an M1 Pro, a MUMPS factorization of a 90k two-dimensional Laplacian
+# takes, in seconds against the thread count:
+#
+#                 1       2       4       8
+#   accelerate    0.78    0.41    0.41    0.36
+#   openblas      0.57    0.81    0.84    1.46
+#
+# The two libraries want opposite settings, which is the part worth carrying
+# away. Openblas is fastest on one thread here and loses to its own
+# synchronization past that, since a two-dimensional problem factors into small
+# supernodes; accelerate keeps gaining. So a run on this library should let it
+# thread -- and a machine that has been told OMP_NUM_THREADS=1 to make openblas
+# behave has to be untold, or it will sit at the slowest column above.
+#
+# A Laplacian is not the mixture's saddle-point system, whose velocity blocks are
+# denser and whose supernodes are correspondingly larger, so treat the ratio as a
+# floor rather than a figure. `pc_factor_mat_solver_type` is the other half of
+# the same measurement and is in the spec, not here.
+name: ovpsolver
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - libblas=*=*accelerate

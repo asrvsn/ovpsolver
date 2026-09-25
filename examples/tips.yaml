@@ -1,0 +1,199 @@
+# A basic example of ovpsolver for a two-component Model B system with surface wetting.
+
+# Solver parameters, independent of the physics of the run.
+solver:
+  # Regularization of logarithm: log phi := log delta + log((phi - delta) / delta) when phi < delta. Used in entropies e.g. @src/ovpsolver/model_b/phase_field/field.py (CHPhaseField.mixing_entropy).
+  log_reg_delta: 1.0e-4
+
+  # In a "standard" OVP fluxes are determined, not velocities. We require velocities as unknowns for various reasons including advancement of co-transported states. The velocity is undetermined when its carried density vanishes (as it does exponentially fast inside inclusions). Thus, in dissipation potentials, we use a smooth-maximum of the carried density and this floor to ensure that velocity is well-posed everywhere in the domain. Note that this ill-posedness is distinct from that remedied by the indicator floor below. @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.drag_measure)
+  drag_measure_floor: 1.0e-3
+
+  # Specification of the geometry: outer domain, inner (diffuse) surfaces, and meshing parameters.
+  diffuse_domain:
+    # Geometry file specifying boundary of computational domain and signed distance functions to internal surfaces.
+    geometry: geometry_disks_triplet.py
+    # geometry: geometry_disks_gas.py
+    # Epsilon parameter of the diffuse-domain. Interface width is 2*eps.
+    domain_eps: 0.03
+    # Mesh characteristic lengthscale for the whole domain.
+    mesh_h: 0.01
+    # Minimum number of elements across the interface width 2 * eps; set to 5 per convention (https://pmc.ncbi.nlm.nih.gov/articles/PMC3171464/). Selective refinement of the interface width is done if not met.
+    min_elements_across_interface_width: 5
+    # Mesh algorithm passed to gmsh. `frontal_delaunay` is more crystalline but generally a faster solve than `delaunay`.
+    mesh_algorithm: delaunay
+    # Color of the inclusion indicator function (1 - chi_eps) to be rendered.
+    inclusion_color: limegreen
+    # Quadrature degree of integration against the indicator function chi_eps.
+    indicator_quadrature_degree: 3
+    # Floor added to the diffuse domain-measure to ensure wellposedness. @src/ovpsolver/diffuse_domain/domain.py (DiffuseDomain.chi_eps_analytic_ufl)
+    indicator_floor: 0.05
+    # Effective surface (membrane) permeability to excess flux beyond specified; used in practice to stabilize Lagrange multipliers enforcing the flux conditions. @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.surface_crossing_penalty)
+    surface_permeability: 1.0e-5
+    # Quadrature degree for integration of the per-element normal crossing penalty. Higher degree samples the crossing flux more accurately, up to dofs of velocity (P2). @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.surface_crossing_penalty)
+    flux_bc_quadrature: 3
+    # Bulk drag of phases against (1 - chi_eps), the inclusions. Convergence to no-slip condition as eps -> 0. @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.inclusion_drag)
+    inclusion_drag: 0.0
+    # Whether to use standard UFL facet jumps or a-priori fitted coefficients to compute the contact angles of phases <grad phi, grad chi_eps>. The former is more sensitive to meshing of the interface, while the latter costs an initial solve and is exact for a quadratic profile approaching the interface. May improve wetting accuracy on complex geometries. @src/ovpsolver/diffuse_domain/domain.py (DiffuseDomain.contact_angle)
+    contact_angle_gradient_fitting: false
+    # Names of domain fields to save. This saves the bulk indicator function chi_eps.
+    save: ["indicator"]
+
+  # Timestepping logic.
+  timestepping:
+    dt: 1.0e-3
+    # Initial timestep to take before letting CFL limits decide.
+    warm_start_dt: 1.0e-4
+    # Number of total timesteps to take.
+    n_steps: 100
+    # CFL-like coefficient in (0, 1) with which positivity is enforced (within 10% or 1, whichever is smaller) for those fields that demand it (phase-fields, other positivity-restricted states) during their upwinded transport. @src/ovpsolver/solver/solver.py (PhaseFieldSolver.cfl_allowance), @src/ovpsolver/phase_field_system/transport/transported.py (Transported.cfl_limit)
+    cfl_positive_transport: 0.7
+    # After velocities are solved, the CFL-limited timestep is available. If we took a step larger than this (which can possibly but not necessarily lead to negative values during transport of positivity-restricted fields), retry the step with this fraction of the CFL-prescribed limit.
+    retry_cfl_timestep_fraction: 0.8
+    # If the Newton solve diverges for some reason, retry the step with this fraction of the attempt.
+    retry_diverged_timestep_fraction: 0.5
+    # Maximum number of CFL- or divergence-induced retries on a sub-step.
+    max_retries: 12
+    # Minimum fraction of the step remaining to take before we "carry over" the remainder to the next step. Avoids expensive solves for tiny remainder steps.
+    min_remainder_fraction: 0.1
+    # Throw when positivity for the declared fields is violated below this floor. Should in principle be unreachable.
+    positivity_floor_throw: -1.0e-10
+
+  # "Reversible" step: solution of discretized Onsager variational principle dR/d(quasistatic variables) = 0, R = (E_k+1-E_k)/Delta t + Psi + C.
+  ovp_step:
+    # Skip the step for debugging purposes, e.g. to see only the irreversible timestep.
+    skip: false
+    # Newton should generally converge in 1-3 iterations for healthy solves.
+    snes_max_it: 10
+    snes_rtol: 1.0e-5
+    snes_atol: 1.0e-10
+    snes_monitor: true
+    # Experimental: whether to stop using the standard |F| coefficient residual (null) or to use the excess Rayleighian as the relative tolerance. This just sets a tolerance for Newton iterations, and generally results in earlier termination than with |F|.
+    excess_rayleighian_rtol: null
+    petsc_options:
+      snes_type: newtonls
+      # This is a genuine gradient-flow problem, so critical-point is appropriate.
+      snes_linesearch_type: cp
+      # Everything here is a PETSc option, handed to PETSc verbatim under this solve's prefix (ovp_rate_). The fieldsplit_state_ and fieldsplit_static_ entries are PETSc's own namespacing for the two halves of a field split; only the half names are ours, taken from the element types.
+      # Two ways to solve each Newton step's linear system; keep exactly one of the two blocks below uncommented.
+      #
+      # Direct: one MUMPS factorization of the whole system. A lagged factorization is applied once, so lagging it is a chord step whether or not the Jacobian is lagged with it. If strong Newton convergence is observed after 1 iteration, we avoid recomputing the factorization on successive steps to hit the tolerance cheaply.
+      # ksp_type: preonly
+      # pc_type: lu
+      # pc_factor_mat_solver_type: mumps
+      # snes_lag_jacobian: 2
+      # snes_lag_preconditioner: 2
+      #
+      # Split: eliminate the live states ("state": phases, potentials, whatever the energy reads at k+1) exactly, and factor what is left -- velocities, pressure and multipliers ("static"), the Hessian of the Rayleighian in the rates -- as a symmetric-indefinite LDL^T, at a fraction of the direct solve's memory. @src/ovpsolver/solver/solver.py
+      # The whole split is applied once per Newton step; all the iterating happens on the static half, below.
+      ksp_type: preonly
+      pc_type: fieldsplit
+      pc_fieldsplit_type: schur
+      # Both halves are solved, so the states are eliminated exactly: the transport rows come out exact by back-substitution, whatever the static half's tolerance.
+      pc_fieldsplit_schur_fact_type: full
+      # The static half is preconditioned by its own block. What eliminating the states adds to it (the Cahn-Hilliard stiffness) is left to the Krylov iteration, whose count therefore grows with dt and with refinement.
+      pc_fieldsplit_schur_precondition: a11
+      # Triangular with diagonal blocks, so PETSc's own LU factors it without fill.
+      fieldsplit_state_ksp_type: preonly
+      fieldsplit_state_pc_type: lu
+      fieldsplit_state_pc_factor_mat_solver_type: petsc
+      # GMRES on the static half; right preconditioning makes the residual it converges on the true one.
+      fieldsplit_static_ksp_type: gmres
+      fieldsplit_static_ksp_pc_side: right
+      fieldsplit_static_ksp_gmres_restart: 50
+      # How well each Newton step satisfies the static rows: the force balance and every constraint -- saturation (the pressure's row) and impermeability (the multipliers'). Loosening it trades constraint satisfaction for iterations, so it is not a speed knob.
+      fieldsplit_static_ksp_rtol: 1.0e-8
+      # A stall guard, far above what a healthy solve takes (the log's its= per Newton step, krylov= per rate solve). PETSc on its own would accept a solve cut off here as inexact, loosening the rows above unannounced; the solver fails the Newton step instead, which is retried at a smaller dt and logged as cause=linear:DIVERGED_PC_FAILED[ovp_rate_fieldsplit_static_ ... after N].
+      fieldsplit_static_ksp_max_it: 500
+      # Symmetric indefinite, so MUMPS LDL^T, which reads the upper triangle.
+      fieldsplit_static_pc_type: cholesky
+      fieldsplit_static_pc_factor_mat_solver_type: mumps
+      # # The factorization in single precision: half its memory, and only the preconditioner, so the answer would still be set by the tolerance above. Not the default: it costs more iterations, and the static solve can fail outright -- plausibly because this block's entries span some twelve decades (multiplier relaxations against penalties), beyond single precision's seven digits.
+      # fieldsplit_static_pc_precision: single
+      # Neither factored block changes within a step, so factor once per step (any lag above snes_max_it) and keep the Jacobian current, which keeps Newton exact.
+      snes_lag_jacobian: 1
+      snes_lag_preconditioner: 100
+
+  # "Irreversible" step: Lie-split advancement of states in a manner not governed by OVP. E.g. chemical reactions, see ./pips.yaml.
+  irreversible_step:
+    skip: true
+
+  # Where to save the run. The spec.yaml and geometry.py are copied to the output directory, so the run data is fully self-contained for analysis, resuming, etc.
+  save:
+    logfile: log.txt
+    path: ./scratch/tips
+    # How often to append the desired results declared in the spec.
+    every_k: 1
+    # How often to exactly snapshot the state (independent of what you ask to save) so that the run is resumable. As the main use-case is to continue a run forwards in time, not to re-do computations, in light of disk costs of saving the full state every k, this overwrites, instead of `every_k`, which appends. So each run is always resumable, but exactly from one point in time.
+    resumable_every: 2
+    dtype: float64
+    debug: true
+
+# Specification of physics.
+system:
+  # Random seed.
+  rng_seed: 0
+  # Gaussian perturbation of initial phase-field configuration with stddev sigma.
+  initial_phase_noise_sigma: 0.0
+  # Temperature (for entropic and bulk/surface affinity contributions).
+  k_B_T: 1.0
+  # Like surface_permeability above; pressure enforces the saturation constraint sum_i phi_i = 1, subject to a concave stabilization term which makes the contribution to the dissipation potential effectively a bulk (dilatational) viscosity of mixture compression. A large value makes the mixture effectively incompressible, while the stabilization ensures the pressure remains well-posed off-support (within the inclusions). @src/ovpsolver/phase_field_system/system.py (PhaseFieldSystem.compression_penalty)
+  dilatational_viscosity: 1.0e+5
+  # Which system-wide fields to save.
+  save: ["pressure", "total_phase"]
+
+  # The individual phase-fields and their physical parameters.
+  # See the implementation of CHPhaseField, declaring a basic Cahn-Hilliard type phase field with logarithmic potential (mixing entropy), at: @src/ovpsolver/model_b/phase_field/field.py 
+  phase_fields:
+    - name: water
+      # Color for rendering phases in plot. 
+      color: navy
+      # Value of the flat homogeneous initial condition specified, subject to phase_noise above and the wetting-condition which is solved statically at step 0. So effectively, flat leading to a specified contact angle to the surfaces, given by surface_affinity below.
+      initial_volume_fraction: 0.7
+      # Interfacial penalty parameter. Note that this influences both the contact angle and the phase-interface width. Resolution of the latter should be considered against mesh_h above.
+      kappa: 1.0e-3
+      # Value of N in the mixing entropy contribution phi / N log phi. "Monomer" here and throughout indicates a single particle of species i, which may itself be a macromolecule, hence N.
+      monomer_polymerization_degree: 1.0
+      # Volume relating concentrations and phase-fields by v c = phi. Used for imposing flux conditions in concentration.
+      monomer_volume: 1.0
+      # "Bare" diffusion constant. Onsager mobility in the base implementation is linear, M(phi) = D * phi, which can be changed by overriding the dissipation potential @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.darcy_dissipation).
+      diffusivity: 1.0
+      # Regularization parameter to suppress sub-element velocity gradients. Effective viscosity is determined from the screening length by balance against the dissipation potential as eta = l_b^2 / D.
+      bulk_viscous_screening_length: 0.05
+      # Same thing, except the normal viscous penalty |grad_Gamma (v . n)|^2, with the operator and n defined by the diffuse surface. Regularizes the per-element flux crossing penalty by suppressing sub-element gradients in the normal.
+      surface_viscous_screening_length: 0.0 # 0.087
+      # Bulk affinity omega phi in the Flory-Huggins free energy density of mixing.
+      bulk_affinity: 0.0
+      # Surface affinity, sets the contact angle at surfaces via kappa * grad phi . n + kBT (surf_affinity) = 0.
+      surface_affinity: 0.005
+      # Tangential drag coefficient against surfaces.
+      surface_drag: 1.0
+      # Flux density (in units of concentration) per unit surface area. Actual flux is therefore (density) * dGamma_eps, the latter the diffuse surface measure. Imposed at surface normal up to surface_permeability above, see @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.surface_crossing_penalty) .
+      surface_flux_density: 0.0
+      # Same, at outer domain edge.
+      boundary_flux_density: 0.0
+      # Saved fields. Pass a random string here to see what is available.
+      save: ["phi", "v", "aux_potential"]
+
+    - name: lipid
+      color: orange
+      initial_volume_fraction: 0.3
+      kappa: 1.0e-3
+      monomer_polymerization_degree: 1.0
+      monomer_volume: 1.0
+      diffusivity: 1.0
+      bulk_viscous_screening_length: 0.05
+      surface_viscous_screening_length: 0.0 # 0.087
+      bulk_affinity: 0.0
+      surface_affinity: -0.005
+      surface_drag: 1.0
+      surface_flux_density: 0.0
+      boundary_flux_density: 0.0
+      save: ["phi", "v", "aux_potential"]
+
+  # Energetic and dissipative couplings between the phases. Here, only the Flory-Huggins quadratic form.
+  couplings:
+    flory_huggins:
+      # Specify unordered pairs of phases.
+      (water, lipid):
+        # FH parameter chi. Here is above the threshold for spinodal decomposition, which will occur even in the absence of noise due to the strong gradients imposed by nonzero surface affinities.
+        chi: 5.0

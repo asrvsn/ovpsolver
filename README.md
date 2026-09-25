@@ -116,15 +116,15 @@ demonstrating wetting against surfaces with varying curvature and topology.
 
 Now we demonstrate the basic idea of altering the physical definition by changing the Rayleighian 
 
-$$
+```math
 \mathcal R = \dot E + \Psi
-$$
+```
 
 where $E$ is the free energy and $\Psi$ the (Rayleigh) dissipation potential. The Cahn-Hilliard equation with logarithmic potential, for example, is given by (up to saturation constraints, which we enforce via a pressure-like Lagrange multiplier)
 
-$$
-E = \sum_i\int_\Omega \Big[k_BT\Big(\frac{\phi_i}{N_i}\log\phi_i + \sum_{i<j} \chi_{ij} \phi_i\phi_j\Big) + \frac{\kappa_i}{2}|\nabla \phi_i|^2\Big]\,dx,\quad \Psi = \sum_i \int_\Omega \frac{|\phi_i v_i|^2}{2M_i(\phi_i)}\,dx,
-$$
+```math
+E = \sum_i\int_\Omega \Big[k_BT\Big(\frac{\phi_i}{N_i}\log\phi_i + \sum_{i \lt j} \chi_{ij} \phi_i\phi_j\Big) + \frac{\kappa_i}{2}|\nabla \phi_i|^2\Big]\,dx,\quad \Psi = \sum_i \int_\Omega \frac{|\phi_i v_i|^2}{2M_i(\phi_i)}\,dx,
+```
 
 where $v_i$ are the velocities (unknowns) of the solve and $\phi_i$ the phase-fields.
 

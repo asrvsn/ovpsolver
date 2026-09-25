@@ -23,8 +23,8 @@ A phase that moves as a whole on one velocity.
   - at the inclusion surfaces, as `surface_flux`, per unit bulk volume;
   - through $\Sigma$, as `boundary_flux` from the parameter `boundary_flux_density`, per unit boundary area.
 - **`energy_density()`**: two convex bulk terms on top of the base terms:
-  - the ideal mixing entropy $k_BT\,(\phi/N)\log\phi$, with the logarithm regularized below `log_reg_delta`;
-  - the bulk affinity $k_BT\,\omega\,\phi$.
+  - the ideal mixing entropy $k_BT\ (\phi/N)\log\phi$, with the logarithm regularized below `log_reg_delta`;
+  - the bulk affinity $k_BT\ \omega\ \phi$.
 - **`dissipation()`**: on top of the base terms (crossing penalty and inclusion drag), four terms, each against `prev.phi`:
   - the Darcy drag with diffusivity $D$;
   - the tangential surface drag;
@@ -42,4 +42,4 @@ It supplies the two methods the abstract [`FloryHugginsCoupling`](../phase_field
 - **`hessian()`**: the matrix of `chi`, one coefficient per unordered pair of phases.
 - **`slots(time_level)`**: each phase's `phi` handle.
 
-The base splits the Hessian convex–concave once, before the mesh exists. It declares $\frac{k_BT}{2}\,y^T H y$ as a single `EnergyDensity` written in the phases' handles, so its potentials reach the phases' rows through `energy_rate(terms)` without the coupling naming them. It owns no fields and declares no dissipation.
+The base splits the Hessian convex–concave once, before the mesh exists. It declares $\frac{k_BT}{2}\ y^T H y$ as a single `EnergyDensity` written in the phases' handles, so its potentials reach the phases' rows through `energy_rate(terms)` without the coupling naming them. It owns no fields and declares no dissipation.

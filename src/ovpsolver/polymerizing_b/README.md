@@ -28,7 +28,7 @@ Its parameters ([parameters.py](parameters.py)) turn the roster into a block of 
   - the mixing entropy in the moments, convex-split;
   - the affinity, in the reacted-site fraction.
 - **`energy_rate(terms)`** adds the elastic stress power directly, in place of declaring an elastic energy.
-  - The energy cannot be declared. The strain energy in full, $\frac12\int(\operatorname{tr}{\sf m} - d\vartheta - 2\ell)$, needs the volumetric moment $\ell$, which the package does not evolve. Its power needs only the modulus and the strain moment: $\ell$'s rate law contributes exactly the $-\vartheta\,\nabla\cdot v_g$ in $({\sf m} - \vartheta I):\nabla v_g$.
+  - The energy cannot be declared. The strain energy in full, $\frac12\int(\operatorname{tr}{\sf m} - d\vartheta - 2\ell)$, needs the volumetric moment $\ell$, which the package does not evolve. Its power needs only the modulus and the strain moment: $\ell$'s rate law contributes exactly the $-\vartheta\ \nabla\cdot v_g$ in $({\sf m} - \vartheta I):\nabla v_g$.
   - Entering at `energy_rate` short-circuits the abstract pattern, in which energy is declared, passed up the tree and handed back down. That is admissible for a term that verifiably needs neither leg: this one generates forces only on the phase's own gel velocity, and is the potential of no transported variable. Such a term may be written directly as a power in the live velocities.
 - **`dissipation()`** adds, for each velocity, what it pays:
   - the sol pays the Darcy drag; the gel, which has none, takes the floor deficit instead;

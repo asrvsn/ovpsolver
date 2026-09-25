@@ -42,7 +42,7 @@ What a concrete mixture inherits without writing anything, what it is refused fo
 - **One transport rule.** Every term that reads a transported variable across a facet takes the triples `(selector, live velocity, lagged density)` from `Transported.upwind()`: its transport row, its energy rate, the pressure's volumetric rate and its step bound. None of the three can be chosen by a caller. So the flux leaving one cell enters its neighbour by construction, each phase is conserved exactly, and the phase sum in a cell changes by exactly the compression the pressure permits.
 - **No motion, no change.** The velocity in every triple is the live one and the density the lagged one, so zero velocities change nothing.
 - **A convex rate problem.** Upwind selectors read the lagged velocity, which keeps every row of the rate problem affine in the rates. The convex part of each energy is taken live and the concave part lagged.
-- **Energy release matches transport.** A live variable's energy rate is $-\int \mu\, \nabla\cdot J$ on the same facet numbers as its transport row, with $\mu$ the convex-split derivative of the mixture's whole energy (`Transported.energy_rate`, `potential_of`).
+- **Energy release matches transport.** A live variable's energy rate is $-\int \mu\ \nabla\cdot J$ on the same facet numbers as its transport row, with $\mu$ the convex-split derivative of the mixture's whole energy (`Transported.energy_rate`, `potential_of`).
 - **Cross terms reach their rows.** $\mathcal R$ is differentiated once against every rate unknown (`stationarity`), and the energy handles from `ElementOwner.variable` are memoized. So a term one object writes in another's variables lands in that object's rows without naming them.
 - **Flux conditions on every velocity.** Each `VelocityElement` brings its own multipliers, and `PhaseField` writes three terms for every velocity: the normal-flux pin on $\Sigma$, the membrane crossing dissipation at the inclusion surfaces, and the inclusion drag. A concrete phase cannot forget one.
 - **Wetting as a natural condition.** `aux_residual` defines the potential as $-\kappa \Delta\phi + C/\chi_\varepsilon$, whose natural boundary condition at the diffuse surfaces is the contact angle. Nothing is penalized.
@@ -188,7 +188,7 @@ Its potential is always the derivative of the mixture's declared energy (`potent
 
 - **`upwind(boundary=False)`**. The variable's flux as `(selector, live velocity, lagged density)` facet triples: the single source of every facet term (§2).
 - **`transport_residual()`**. The conservation law $F(\chi\rho) + \nabla\cdot(\chi \sum_\alpha v_\alpha \rho_\alpha) = \sum_\alpha s_\alpha$, with an implicit accumulation and a flux live in the velocity and lagged in the density. The flux through $\Sigma$ is substituted by its imposed value rather than integrated. This is the one residual a subclass may write by hand.
-- **`energy_rate(terms)`**. $-\int \mu\, \nabla\cdot J$ in the live velocities.
+- **`energy_rate(terms)`**. $-\int \mu\ \nabla\cdot J$ in the live velocities.
   - It integrates the live flux through $\Sigma$, so the velocity rows feel the energy an influx releases.
   - It is nothing for a lagging variable, which is refused if the energy depends on its next value.
 
@@ -207,9 +207,9 @@ Its potential is always the derivative of the mixture's declared energy (`potent
 
 ### `LieTransported`
 
-A tensor stretched by a deforming network, $\partial_t M + \nabla\cdot(Mv) = \nabla v\, M + M \nabla v^{T}$.
+A tensor stretched by a deforming network, $\partial_t M + \nabla\cdot(Mv) = \nabla v\ M + M \nabla v^{T}$.
 
-- The conservation part stays a flux. `transport_residual` adds the stretching as the congruence $G M G^{T}$, $G = I + dt\,\nabla v$, which keeps a semidefinite moment semidefinite at any step.
+- The conservation part stays a flux. `transport_residual` adds the stretching as the congruence $G M G^{T}$, $G = I + dt\ \nabla v$, which keeps a semidefinite moment semidefinite at any step.
 - `cfl_limit` bounds growth rather than positivity.
 - The phase that owns the moment declares the matching stress power.
 
@@ -249,7 +249,7 @@ Nothing here is differentiated. Subclassing is the declaration, so an object can
 An `EnergyDensity` ([energy.py](energy.py)) has three fields:
 - **`convex`**, evaluated at $k+1$;
 - **`concave`**, subtracted and evaluated at $k$;
-- **`domain`**: `BULK` integrates against $\chi_\varepsilon\,dx$, and `DIFFUSE_SURFACE` against $d\Gamma_\varepsilon\,dx$.
+- **`domain`**: `BULK` integrates against $\chi_\varepsilon\ dx$, and `DIFFUSE_SURFACE` against $d\Gamma_\varepsilon\ dx$.
 
 Its `potential(next, prev)` is the convex-split derivative against one variable. A term may also be declared by its tangent, a potential paired with its field, where the potential is what the discrete space can hold; `PhaseField`'s gradient penalty is declared this way.
 

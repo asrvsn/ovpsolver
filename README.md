@@ -132,15 +132,13 @@ where $v_i$ are the velocities (unknowns) of the solve and $\phi_i$ the phase-fi
 
 In this example, we make the free-energy time-dependent through $N_i(t)$ and $\chi_{ij}(t)$ via an underlying polymerization reaction. This also leads to the formation of a separate gel phase, with each phase splitting into sol and gel as $\phi_i = \phi_i^{\rm s} + \phi_i^{\rm g}$.
 
-The basic structure is to create a mini module which mirrors the structure of `PhaseFieldSystem` / `PhaseField` ([phase_field_system/](src/ovpsolver/phase_field_system)), as exemplified by `ModelB` ([model_b/](src/ovpsolver/model_b)). Documentation of key aspects of this abstract state tree (`PhaseFieldSystem` and `PhaseField`) along with user-facing constructions (`Transported`, `Flux`) can be found in 
+The basic structure is to create a mini module which mirrors the structure of `PhaseFieldSystem` / `PhaseField` ([phase_field_system/](src/ovpsolver/phase_field_system)), as exemplified by `ModelB` ([model_b/](src/ovpsolver/model_b)). These pieces are documented separately in:
 
-- [The abstract structure](src/ovpsolver/phase_field_system/README.md): `PhaseFieldSystem`, `PhaseField`, `Transported` and `Flux`, and what they guarantee.
-- [Model B](src/ovpsolver/model_b/README.md): what `ModelB` declares on top of it.
-- [Polymerizing Model B](src/ovpsolver/polymerizing_b/README.md): what `PolymerizingB` adds.
+- [abstract `PhaseFieldSystem`](src/ovpsolver/phase_field_system/README.md), along with user-facing constructions (`Transported`, `Flux`, etc.)
+- [concrete `ModelB` implementation](src/ovpsolver/model_b/README.md)
+- [the `PolymerizingB` implementation](src/ovpsolver/polymerizing_b/README.md)
 
-Here, details of concrete implementations (`ModelB`, `PolymerizingB`) can be found within their respective submodules.
-
-This system, which we call `PolymerizingB`, inherits directly from `PhaseFieldSystem` in [polymerizing_b/system.py](src/ovpsolver/polymerizing_b/system.py) and re-uses `ModelB`'s `CHPhaseField`s for non-polymerizing species, while defining a new `PolymerizingPhaseField` ([polymerizing_b/phase_field/field.py](src/ovpsolver/polymerizing_b/phase_field/field.py)) which extends the free energy $E$ and dissipation potential $\Psi$ definitions, while introducing separate velocities for separate sol and gel phases.
+In this instance, `PolymerizingB` inherits directly from `PhaseFieldSystem` in [polymerizing_b/system.py](src/ovpsolver/polymerizing_b/system.py) and re-uses `ModelB`'s `CHPhaseField`s for non-polymerizing species, while defining a new `PolymerizingPhaseField` ([polymerizing_b/phase_field/field.py](src/ovpsolver/polymerizing_b/phase_field/field.py)) which extends the free energy $E$ and dissipation potential $\Psi$ definitions, while introducing separate velocities for separate sol and gel phases.
 
 Thus, both `ModelB` and `PolymerizingB` are individually examples of defining new `PhaseFieldSystem`s, with the former simply declaring the free energy of mixing and the latter a more complex system with co-advected internal states representing, e.g. the extent of the polymerization reaction and state of strain of the gel phase.
 

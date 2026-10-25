@@ -89,6 +89,13 @@ class TimesteppingParameters(Parameters):
         succeeds proposes the transport bound again.
     max_retries : how many times one sub-step may be retaken before the run is
         abandoned.
+    min_dt : the shortest sub-step the driver may ask for before the run is
+        abandoned, in units of time. A run whose transport bound collapses goes
+        on accepting sub-steps too short to advance it, and ``max_retries``
+        never fires, since each of them succeeds. So a sub-step proposed from
+        the last bound, or retried, below this stops the run instead. The
+        remainder that ends a macro step is not held to it, being short by
+        arithmetic rather than by the bound. Zero disables it.
     min_remainder_fraction : the shortest trailing sub-step worth taking, as a
         fraction of the macro step. Sub-cycling almost never lands exactly on the
         reporting interval, and the sliver left would cost a full nonlinear
@@ -116,12 +123,21 @@ class TimesteppingParameters(Parameters):
     retry_cfl_timestep_fraction: float = Fraction(0.8, coefficient=False)
     retry_diverged_timestep_fraction: float = Fraction(0.5, coefficient=False)
     max_retries: int = Index(12)
+    min_dt: float = Number(0.0, minimum=0.0, coefficient=False)
     min_remainder_fraction: float = Number(
         0.1, minimum=0.0, maximum=1.0, exclusive_maximum=True, coefficient=False
     )
     positivity_floor_throw: float = Number(
         -1.0e-10, maximum=0.0, optional=True, coefficient=False
     )
+
+    def validate(self) -> None:
+        if self.min_dt >= self.warm_start_dt:
+            raise ValueError(
+                f"{self.where}.min_dt={self.min_dt:.6g} is not below "
+                f"warm_start_dt={self.warm_start_dt:.6g}, so the first sub-step "
+                f"would already stop the run"
+            )
 
 
 class OVPStepParameters(Parameters):

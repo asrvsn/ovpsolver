@@ -23,7 +23,8 @@ solver:
     cfl_positive_transport: 0.7
     retry_cfl_timestep_fraction: 0.8
     retry_diverged_timestep_fraction: 0.5
-    max_retries: 12
+    max_retries: 5
+    min_dt: 0.0
     min_remainder_fraction: 0.1
     positivity_floor_throw: -1.0e-10
 

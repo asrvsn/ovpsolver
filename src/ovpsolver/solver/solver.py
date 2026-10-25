@@ -156,8 +156,10 @@ class PhaseFieldSolver:
         )
         self.excess_rayleighian.attach(self.rate_problem)
         # The bound the last accepted step reported, which is what sizes the
-        # next one. ``None`` until a step has been taken and checked.
+        # next one. ``None`` until a step has been taken and checked. With it,
+        # whichever variable bound it, for the message if it collapses.
         self._proposal: float | None = None
+        self._binding = "nothing transported"
 
     ## Public
 
@@ -451,12 +453,31 @@ class PhaseFieldSolver:
 
         A good prediction, because the velocities move little over a step that
         satisfied it. Before the first step no velocity has been solved, so
-        ``warm_start_dt`` stands in, and is checked like any other.
+        ``warm_start_dt`` stands in, and is checked like any other. A bound
+        below ``min_dt`` stops the run instead (:meth:`_require_step`).
         """
 
         if self._proposal is None:
             return self.parameters.warm_start_dt
+        self._require_step(
+            self._proposal, f"proposed from the bound {self._binding} reported"
+        )
         return self._proposal
+
+    def _require_step(self, dt: float, what: str) -> None:
+        """Stop the run if a sub-step about to be asked for is below ``min_dt``.
+
+        Stopped rather than retried: a step this short is asked for because the
+        bound or the solve collapsed, and a shorter one would not advance the run
+        either -- it would only hold up whatever was queued behind it.
+        """
+
+        floor = self.parameters.min_dt
+        if dt < floor:
+            raise RuntimeError(
+                f"the sub-step {what} is dt={dt:.6e}, below min_dt={floor:.6e}; "
+                "the run stops rather than go on stepping without advancing"
+            )
 
     def _substep(self, dt: float) -> float:
         """Take one Lie-split sub-step, retrying smaller until it is admissible.
@@ -474,6 +495,8 @@ class PhaseFieldSolver:
         bound with that selector and then freezes it -- the lagged selector
         ``sigma_k`` replaced by the attempt's ``sigma_{k+1}``, once rather than
         iterated -- and every later rejection restores it with the state.
+
+        A retry shorter than ``min_dt`` stops the run (:meth:`_require_step`).
         """
 
         saved = self.system.checkpoint()
@@ -482,6 +505,10 @@ class PhaseFieldSolver:
         frozen = False
         limit, who = float("inf"), "nothing transported"
         for attempt in range(self.parameters.max_retries + 1):
+            if attempt:
+                self._require_step(
+                    dt, f"after {attempt} retr{'y' if attempt == 1 else 'ies'}"
+                )
             self.progress.substep(dt)
             try:
                 self._advance(dt)
@@ -497,7 +524,7 @@ class PhaseFieldSolver:
                 limit, who = self._cfl_limit()
                 if dt <= self.cfl_allowance(limit):
                     self._check_nonnegative()
-                    self._proposal = limit
+                    self._proposal, self._binding = limit, who
                     self.instrument.accepted(dt, limit, who)
                     return dt
             self.instrument.retry(attempt, dt, "cfl", limit=limit, binding=who)

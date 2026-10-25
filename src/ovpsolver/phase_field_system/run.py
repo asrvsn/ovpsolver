@@ -30,8 +30,14 @@ hand means exactly what it says.
 
 from __future__ import annotations
 
+import argparse
+import gc
 import logging
+import os
 import shutil
+import sys
+import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,11 +51,13 @@ from ..solver.progress import SAVE
 from .entry import EntryPoint
 from .parameters import SpecParameters
 from .resume import Resume
+from .sweep import PRODUCT, ZIP, Sweep, SweepFailed, Variant
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from argparse import ArgumentParser
+    from collections.abc import Sequence
 
     from ..solver.parameters import SaveParameters
     from .parameters import PhaseFieldSystemParameters
@@ -70,6 +78,8 @@ def load(path: str | Path) -> dict[str, Any]:
 def read(
     prototype: "type[PhaseFieldSystemParameters] | PhaseFieldSystemParameters",
     path: str | Path,
+    *,
+    relative_to: str | Path | None = None,
 ) -> "PhaseFieldSystemParameters":
     """Read the document at ``path``, its ``system`` block against ``prototype``.
 
@@ -78,12 +88,18 @@ def read(
     :attr:`~ovpsolver.phase_field_system.parameters.PhaseFieldSystemParameters.solver`.
     Strict, so the document has to answer every declaration: a spec is a
     complete record of the run it produced, and nothing here fills a silence.
+
+    The paths the document names are relative to it, or to ``relative_to``: a
+    sweep writes its variants elsewhere, each meaning its paths as the spec it
+    varies does (:mod:`~ovpsolver.phase_field_system.sweep`).
     """
 
     source = Path(path).expanduser().resolve()
     blank = prototype() if isinstance(prototype, type) else prototype
     spec = SpecParameters(system=blank).read(load(source), source.name, strict=True)
-    spec.resolve_against(source)
+    spec.resolve_against(
+        source if relative_to is None else Path(relative_to).expanduser().resolve()
+    )
     parameters = spec.system
     parameters.source = source
     return parameters
@@ -109,7 +125,11 @@ def check_serial() -> None:
 
 
 def claim(
-    save: "SaveParameters", *, overwrite: bool = False, resuming: bool = False
+    save: "SaveParameters",
+    *,
+    overwrite: bool = False,
+    resuming: bool = False,
+    check_only: bool = False,
 ) -> None:
     """Take the output directory, refusing one that already holds something.
 
@@ -124,7 +144,8 @@ def claim(
     ``overwrite`` clears the directory first, but only one that looks like a
     previous run; anything else is somebody's own. ``resuming`` inverts the
     question: a resume continues the run that is there, so an empty directory is
-    the failure, and nothing is cleared.
+    the failure, and nothing is cleared. ``check_only`` asks every question and
+    clears nothing, so a queue can be checked whole before its first run starts.
     """
 
     directory = save.directory
@@ -165,7 +186,8 @@ def claim(
             f"--overwrite will not clear it: {', '.join(entries[:8])}. Empty it "
             f"by hand if that is really what is wanted."
         )
-    shutil.rmtree(directory)
+    if not check_only:
+        shutil.rmtree(directory)
 
 
 def run(
@@ -175,6 +197,7 @@ def run(
     n_steps: int | None = None,
     overwrite: bool = False,
     resume: bool = False,
+    relative_to: str | Path | None = None,
 ) -> float:
     """Build the mixture the document describes and step it; returns the time reached.
 
@@ -185,10 +208,10 @@ def run(
     the same mesh, read from the archive it is already in, the same forms, the
     same warm start -- except where the first step starts from. See
     :mod:`~ovpsolver.phase_field_system.resume`.
-    """
 
-    # Inline: the solver module imports this package's transport at import time.
-    from ..solver import PhaseFieldSolver
+    ``relative_to`` is what the document's paths are relative to, if not the
+    document itself; see :func:`read`.
+    """
 
     check_serial()
     if resume and overwrite:
@@ -196,7 +219,7 @@ def run(
             "--resume continues a run and --overwrite deletes one; they cannot "
             "both be what was meant"
         )
-    parameters = read(system_class.Parameters, path)
+    parameters = read(system_class.Parameters, path, relative_to=relative_to)
     save = parameters.solver.save
     claim(save, overwrite=overwrite, resuming=resume)
     configure(
@@ -205,6 +228,27 @@ def run(
         debug=save.debug,
         append=resume,
     )
+
+    # Everything from here is in the run's log, a failure included. One while
+    # building the mesh or compiling the forms ends a run as surely as one in a
+    # step, and a sweep that goes on past it leaves the log as its only record.
+    # Outermost, so a saver or a progress bar that fails on the way out fails
+    # after the loop has finished with it, and that is the failure a reader of
+    # the archive needs told about.
+    with log_failures():
+        return _build_and_step(parameters, n_steps=n_steps, resume=resume)
+
+
+def _build_and_step(
+    parameters: "PhaseFieldSystemParameters",
+    *,
+    n_steps: int | None,
+    resume: bool,
+) -> float:
+    """What :func:`run` does once the run's log is open."""
+
+    # Inline: the solver module imports this package's transport at import time.
+    from ..solver import PhaseFieldSolver
 
     # Before anything compiles, and after the log exists to say so. A run
     # interrupted during compilation leaves claims in the FFCx cache that stop
@@ -258,10 +302,6 @@ def run(
 
     reached = 0.0 if plan is None else plan.time
     with (
-        # First, so it is the last to be left: a saver or a progress bar that
-        # fails on the way out fails after the loop has finished with it, and
-        # that is the failure a reader of the archive needs told about.
-        log_failures(),
         Saver.of(
             system,
             n_steps=steps,
@@ -291,6 +331,19 @@ def run(
     return reached
 
 
+class _Group(argparse.Action):
+    """Files every ``--sweep`` and ``--sweep-zip`` in one list, in the order given.
+
+    One list rather than one per option, because the order of the axes is the
+    order of the runs, and argparse keeps no order between two destinations.
+    """
+
+    def __call__(self, parser, namespace, values, option_string=None) -> None:
+        setattr(
+            namespace, self.dest, [*getattr(namespace, self.dest), (self.const, list(values))]
+        )
+
+
 # An EntryPoint rather than a SpecEntryPoint, whose single positional this
 # replaces: only the alternative that produces runs has a use for several specs.
 class RunSpec(EntryPoint):
@@ -303,14 +356,24 @@ class RunSpec(EntryPoint):
     is continued.
 
     Several specs may be named, and are run one after another in the order given,
-    each writing to the directory its own spec names. A sweep is a set of
-    documents rather than a flag, since what varies between two runs is not
-    always one number, and a queue of them runs in one process rather than
-    re-importing everything per run.
+    each writing to the directory its own spec names, in one process rather than
+    re-importing everything per run. A sweep runs each spec many times over,
+    varying values at addresses into its system block:
+
+        run pips.yaml \\
+            --sweep 'couplings.flory_huggins.(water, protein).chi_01=[1, 2, 3]' \\
+            --sweep-zip 'phase_fields.sol[0].kappa=[0.5e-3, 1.0e-3]' \\
+                        'phase_fields.polymerizing[0].kappa=[0.5e-3, 1.0e-3]'
+
+    is six runs: each chi_01 against each pair of kappas, the two stepping
+    together. Each saves to the spec's solver.save.path with -label=value
+    appended per address, as pips-chi_01=2-sol.0.kappa=0.0005-..., and archives
+    the spec with its values in place. A change no address reaches is still a
+    spec of its own.
     """
 
     name = "run"
-    summary = "step a mixture through its spec, or several in sequence"
+    summary = "step a mixture through its spec, several in sequence, or a sweep"
 
     def declare(self, parser: "ArgumentParser") -> None:
         parser.add_argument(
@@ -339,6 +402,34 @@ class RunSpec(EntryPoint):
             "restart point it last committed. Frames after it are rewritten; "
             "everything up to it is kept",
         )
+        parser.add_argument(
+            "--sweep",
+            nargs="+",
+            action=_Group,
+            const=PRODUCT,
+            dest="sweep",
+            default=[],
+            metavar="ADDRESS=VALUES",
+            help="run every combination, each assignment an axis of its own. An "
+            "address is a path into the system block, as phase_fields.sol[0].kappa; "
+            "the values are a YAML list, as [1, 2, 3]. Quote each assignment, and "
+            "name the specs first",
+        )
+        parser.add_argument(
+            "--sweep-zip",
+            nargs="+",
+            action=_Group,
+            const=ZIP,
+            dest="sweep",
+            default=[],
+            metavar="ADDRESS=VALUES",
+            help="step these assignments together, as one axis, so each needs as "
+            "many values as the others",
+        )
+
+    def prepare(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        groups = arguments.pop("sweep")
+        return {**arguments, "sweep": Sweep.from_groups(groups) if groups else None}
 
     def __call__(
         self,
@@ -348,25 +439,113 @@ class RunSpec(EntryPoint):
         n_steps: int | None = None,
         overwrite: bool = False,
         resume: bool = False,
-    ) -> list[float]:
-        """Each spec in turn, stopping at the first that fails.
+        sweep: "Sweep | None" = None,
+    ) -> "list[float | None]":
+        """Each run in turn; returns what each reached, in order.
 
-        Stopping rather than reporting at the end: the specs in a queue are
-        usually variations on one another, so the second failure is nearly
-        always the first one again. Returns what each run reached, in order.
+        Every run is read, and its output directory checked, before the first
+        starts. A queue is started and left, and a typo in its last spec, two
+        runs writing to one directory, or a directory left from an earlier
+        attempt should stop it now rather than hours in.
+
+        A queue of specs stops at the first run that fails: its specs are
+        variations written by hand, so the second failure is nearly always the
+        first one again. A sweep goes on to the next run, since where a sweep
+        fails depends on the values -- the deepest quench diverging while the
+        shallow ones do not -- and the runs that would succeed are the point of
+        it. Each failure is in its run's log, and a :class:`SweepFailed` naming
+        them is raised once the last run is over. An interrupt stops either.
 
         ``--resume`` continues one run from its own restart point, so it is
-        refused for a queue.
+        refused for more than one. A run of a sweep is resumed from the spec
+        archived in its directory.
         """
 
-        if resume and len(specs) > 1:
-            raise ValueError(
-                "--resume continues one run from its own restart point; name a "
-                "single spec"
+        scratch = (
+            tempfile.TemporaryDirectory(prefix="ovpsolver-sweep-")
+            if sweep is not None
+            else nullcontext()
+        )
+        with scratch as directory:
+            runs = (
+                [Variant(Path(one), Path(one), ()) for one in specs]
+                if sweep is None
+                else [
+                    variant
+                    for one in specs
+                    for variant in sweep.variants(one, Path(directory))
+                ]
             )
-        return [
-            system_class.run(
-                one, n_steps=n_steps, overwrite=overwrite, resume=resume
-            )
-            for one in specs
-        ]
+            if resume and len(runs) > 1:
+                raise ValueError(
+                    "--resume continues one run from its own restart point; name a "
+                    "single spec, or resume a run of a sweep from the spec archived "
+                    "in its directory"
+                )
+            directories = self.check(system_class, runs, overwrite=overwrite, resume=resume)
+            if len(runs) > 1:
+                print(
+                    f"{len(runs)} runs, in this order:",
+                    *(f"  {os.path.relpath(path)}" for path in directories),
+                    sep="\n",
+                    flush=True,
+                )
+            options = {"n_steps": n_steps, "overwrite": overwrite, "resume": resume}
+            if sweep is None:
+                return [
+                    system_class.run(run.path, relative_to=run.origin, **options)
+                    for run in runs
+                ]
+
+            reached: list[float | None] = []
+            failures: list[tuple[Path, str]] = []
+            for number, (run, output) in enumerate(zip(runs, directories), start=1):
+                try:
+                    reached.append(
+                        system_class.run(run.path, relative_to=run.origin, **options)
+                    )
+                except Exception as error:
+                    lines = str(error).splitlines()
+                    why = type(error).__name__ + (f": {lines[0]}" if lines else "")
+                    reached.append(None)
+                    failures.append((output, why))
+                    print(
+                        f"run {number} of {len(runs)} failed, going on to the next: {why}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    # The traceback holds the failed run's mesh, forms and
+                    # matrices through its frames; let them go before the next
+                    # run builds its own.
+                    del error
+                    gc.collect()
+            if failures:
+                raise SweepFailed(reached, failures)
+            return reached
+
+    @staticmethod
+    def check(
+        system_class: "type[PhaseFieldSystem]",
+        runs: "Sequence[Variant]",
+        *,
+        overwrite: bool,
+        resume: bool,
+    ) -> list[Path]:
+        """Read every run and check its directory, clearing nothing; returns the directories."""
+
+        claimed: dict[Path, Variant] = {}
+        for run in runs:
+            save = read(system_class.Parameters, run.path, relative_to=run.origin).solver.save
+            directory = Path(os.path.abspath(save.directory))
+            if directory in claimed:
+                raise ValueError(
+                    f"two runs would write to {directory}: "
+                    f"{_named(claimed[directory])} and {_named(run)}"
+                )
+            claimed[directory] = run
+            claim(save, overwrite=overwrite, resuming=resume, check_only=True)
+        return list(claimed)
+
+
+def _named(run: Variant) -> str:
+    return f"{run.origin} with {run.describe()}" if run.settings else str(run.origin)

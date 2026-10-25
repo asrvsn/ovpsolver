@@ -1,0 +1,185 @@
+# PIPS on a coarse mesh, with DDM eps, kappa, and surface affinity tuned accordingly
+
+solver:
+  log_reg_delta: 1.0e-4
+  drag_measure_floor: 1.0e-3
+
+  diffuse_domain:
+    geometry: geometry_disks_triplet.py
+    domain_eps: 0.06
+    mesh_h: 0.02
+    min_elements_across_interface_width: 5
+    mesh_algorithm: delaunay
+    inclusion_color: limegreen
+    indicator_quadrature_degree: 3
+    indicator_floor: 0.05
+    surface_permeability: 1.0e-5
+    flux_bc_quadrature: 3
+    inclusion_drag: 0.0
+    contact_angle_gradient_fitting: false
+    save: ["indicator"]
+
+  timestepping:
+    dt: 1.0e-3
+    warm_start_dt: 1.0e-4
+    n_steps: 140
+    cfl_positive_transport: 0.7
+    retry_cfl_timestep_fraction: 0.8
+    retry_diverged_timestep_fraction: 0.5
+    max_retries: 5
+    min_dt: 0.9e-4
+    min_remainder_fraction: 0.1
+    positivity_floor_throw: -1.0e-10
+
+  ovp_step:
+    skip: false
+    snes_max_it: 10
+    snes_rtol: 1.0e-5
+    snes_atol: 1.0e-10
+    snes_monitor: true
+    excess_rayleighian_rtol: null
+    petsc_options:
+      snes_type: newtonls
+      snes_linesearch_type: cp
+      # The state/static split, as PETSc options; see ./tips.yaml for what each entry does (the static tolerance holds the constraints, so it is not a speed knob), and for the direct solve it replaces.
+      ksp_type: preonly
+      pc_type: fieldsplit
+      pc_fieldsplit_type: schur
+      pc_fieldsplit_schur_fact_type: full
+      pc_fieldsplit_schur_precondition: a11
+      fieldsplit_state_ksp_type: preonly
+      fieldsplit_state_pc_type: lu
+      fieldsplit_state_pc_factor_mat_solver_type: petsc
+      fieldsplit_static_ksp_type: gmres
+      fieldsplit_static_ksp_pc_side: right
+      fieldsplit_static_ksp_gmres_restart: 50
+      fieldsplit_static_ksp_rtol: 1.0e-8
+      fieldsplit_static_ksp_max_it: 500
+      fieldsplit_static_pc_type: cholesky
+      fieldsplit_static_pc_factor_mat_solver_type: mumps
+      # # Block low-rank compression of the static factorization.
+      # fieldsplit_static_mat_mumps_icntl_35: 2
+      # fieldsplit_static_mat_mumps_cntl_7: 1.0e-8
+      snes_lag_jacobian: 1
+      snes_lag_preconditioner: 100
+
+  # Here, as documented below, the irreversible step advances the polymerization kinetics which both alters the free energy of mixing and defines the sol-gel split.
+  irreversible_step:
+    skip: false
+
+  save:
+    logfile: log.txt
+    path: ./scratch/pips
+    every_k: 1
+    resumable_every: 2
+    dtype: float64
+    debug: true
+
+system:
+  rng_seed: 0
+  initial_phase_noise_sigma: 0.0
+  k_B_T: 1.0
+  dilatational_viscosity: 1.0e+5
+  save: ["pressure", "total_phase"]
+
+  phase_fields:
+    sol:
+      - name: water
+        color: navy
+        initial_volume_fraction: 0.6
+        kappa: 4.0e-3
+        monomer_polymerization_degree: 1.0
+        monomer_volume: 1.0
+        diffusivity: 1.0
+        bulk_viscous_screening_length: 0.06
+        surface_viscous_screening_length: 0.0
+        bulk_affinity: 0.0
+        surface_affinity: 0.02
+        surface_drag: 1.0
+        surface_flux_density: 0.0
+        boundary_flux_density: 0.0
+        save: ["phi", "v", "aux_potential"]
+
+    # See the implementation of the PolymerizingPhaseField, declaring a polymerization-dependent free energy and gelation reaction within the irreversible substep, at: @src/ovpsolver/polymerizing_b/phase_field/field.py 
+    polymerizing:
+      - name: protein
+        color: orange
+        # The phase-field phi splits into sol and gel, phi_s + phi_g.
+        color_sol: fuchsia
+        color_gel: limegreen
+        initial_volume_fraction: 0.4
+        # The interfacial penalty applies to the sum: phi, so to sol and gel equally. This produces the Korteweg stress on gel, see e.g. https://link.aps.org/doi/10.1103/PhysRevE.101.032501.
+        kappa: 4.0e-3
+        # Here the name really earns its keep. The effective polymerization degree of sol species is estimated by the number-average molecular weight * this N. The former is a function of the internal chemical state.
+        monomer_polymerization_degree: 1.0
+        # The monomer volume is assumed to be constant independent of the degree of crosslinking. Implementing, for example, cure-induced shrinkage therefore requires an extension.
+        monomer_volume: 1.0
+        # Gel has no translational entropy nor Onsager mobility.
+        sol_diffusivity: 1.0
+        # These various parameters may now be set separately for sol and gel phases.
+        sol_bulk_viscous_screening_length: 0.06
+        gel_bulk_viscous_screening_length: 0.06
+        sol_surface_viscous_screening_length: 0.0
+        gel_surface_viscous_screening_length: 0.0
+        # The bulk affinity is now: omega(phi) = omega_0(phi) + omega_1(phi) * alpha, where alpha is the polymerization reaction extent. This allows additionally for decreasing bulk affinity; this term enters as a constant in the potential, balanced by Lagrange multipliers (unlike alpha-dependent FH contribution below) so we set it zero for this example.
+        bulk_affinity_0: 0.0
+        bulk_affinity_1: 0.0
+        # Surface affinity leads to wetting equally by sol and gel phase; the contact-angle condition is upon their sum, grad(phi) = grad(phi_s) + grad(phi_g). Thus there is no change at the energetic level, however, transport of sol and gel are distinct with some combination serving to satisfy this condition.
+        surface_affinity: -0.02
+        surface_sol_drag: 1.0
+        surface_sol_flux_density: 0.0
+        boundary_sol_flux_density: 0.0
+        # We take trifunctional monomers. f >= 3 in general. 
+        monomer_functionality: 3
+        # The CFL constant for the gelation reaction, implemented as an irreversible step at @src/ovpsolver/polymerizing_b/phase_field/field.py (PolymerizingPhaseField.gelation_max_dt). This occurs in a separate coordinate, z.
+        gelation_burgers_cfl: 0.5
+        # Shear modulus per unit circuit rank number density. This is (a multiple of) the phantom network constitutive relation G = kBT xi, with G the shear modulus and xi the circuit rank of the gel.
+        cycle_shear_modulus: 5.0
+        # Crosslinking rate gamma is the fundamental kinetic constant of the polymerization reaction. Together with functionality f, it defines (in the spatially homogeneous case) the finite-time gel point, tau ~ 1/(f(f-2)gamma phi_0). Here, crosslinking also drives phase-separation, so gelation occurs strongly heterogeneously in space, and somewhat earlier due to strong localization of poorly-miscible polymer.
+        crosslinking_rate: 6.944
+        surface_gel_drag: 1.0
+        boundary_gel_drag: 0.0
+        # The chemical state is actually posed on Omega x [0, 1], with the latter the z-coordinate. The Lie-split scheme enables us to avoid actually constructing this (d+1)-dimensional mesh. Rather, the chemical sub-step is its own finite-volume scheme (which incidentally solves a Burgers equation in z), which we capture here simply by introducing n=64 DG0 unknowns on the Omega-mesh. Then, this step simply acts pointwise in space x, performing the step in auxiliary coordinate z. 
+        z_partition:
+          num_cells: 64
+          # The gradation parameter biases the finite-volume cells geometrically towards z=1, improving resolution of the shock there and therefore the gel fraction.
+          ratio: 1.05
+        save: [
+          "phi",
+          "v_s",
+          "v_g",
+          "aux_potential",
+          "phi_sol",
+          "phi_gel",
+          # Extent of crosslinking reaction in [0, 1], defined as the (pointwise) ratio of reacted sites to total sites.
+          "reaction_extent",
+          # Concentration of unreacted crosslinking sites.
+          "c_x",
+          # Auxiliary variables encoding the internal polymerization state (these are related to moments of the k-mer distribution).
+          "u_bar",
+          "u_trace",
+          # Shear modulus of the gel.
+          "gel_shear_modulus",
+          # History integral of the left Cauchy-Green tensor FF^T, evolved in the lab frame.
+          "gel_strain_moment",
+          # These two quantities are derived from the previous two using the compressible neo-Hookean constitutive relation which we take for the polymer network comprising the gel phase.
+          "gel_hydrostatic_stress",
+          "gel_deviatoric_stress",
+        ]
+
+  couplings:
+    # The Flory-Huggins interaction now depends upon protein's extent of polymerization reaction, via 
+    #   E = chi_00 phi_w phi_p + chi_01 phi_w r_p = phi_w phi_p (chi_00 + chi_01 alpha).
+    # where alpha is the reaction extent. Therefore, note that at full conversion, chi_eff(alpha=1) = 5.5, comparable to ./tips.yaml from the beginning.
+    # Note also that initially, protein monomers are poorly miscible but below the threshold for spinodal decomposition.
+    flory_huggins:
+      (water, protein):
+        chi_00: 1.5
+        chi_01: 4.0
+    gel_entanglements:
+      hook_loop_capture_volume: {}
+    drag:
+      sol_gel:
+        (water, protein): 1.0
+        (protein, protein): 1.0
+      gel_gel: {}

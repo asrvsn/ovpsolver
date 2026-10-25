@@ -125,6 +125,7 @@ class PhaseFieldSystem(
         n_steps: int | None = None,
         overwrite: bool = False,
         resume: bool = False,
+        relative_to: "str | Path | None" = None,
     ) -> float:
         """Read ``spec`` against this mixture, build it, and step it.
 
@@ -135,11 +136,18 @@ class PhaseFieldSystem(
         Refuses an output directory that already holds anything, since a second
         run into one merges with the first rather than replacing it.
         ``overwrite`` clears it instead, and ``resume`` continues the run that
-        is there from the end of one of its own macro steps.
+        is there from the end of one of its own macro steps. ``relative_to`` is
+        what the spec's paths are relative to, if not the spec itself, as for a
+        sweep's variants.
         """
 
         return running.run(
-            cls, spec, n_steps=n_steps, overwrite=overwrite, resume=resume
+            cls,
+            spec,
+            n_steps=n_steps,
+            overwrite=overwrite,
+            resume=resume,
+            relative_to=relative_to,
         )
 
     @classmethod

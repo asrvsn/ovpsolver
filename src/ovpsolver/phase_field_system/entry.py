@@ -134,6 +134,7 @@ def load() -> None:
         ".visualize.phases",
         ".visualize.phases_movie",
         ".visualize.gelation",
+        ".visualize.sweep",
         ".analyze",
     ):
         import_module(module, __package__)

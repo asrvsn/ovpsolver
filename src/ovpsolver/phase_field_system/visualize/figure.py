@@ -4,7 +4,8 @@ Pure matplotlib and pure layout: everything here takes images already drawn and
 decides where on the page they go. The composite row has a column per time or
 run, each panel every phase at once, with colourbars down the right saying which
 hue was which. Split fields add a row per layer under it, each with a colourbar
-of its own, because each layer has its own range.
+of its own, because each layer has its own range. A sweep is laid out as a grid
+instead, a panel per run on the sweep's two axes, over one colourbar.
 
 Every size is read from the ``style`` a mixture carries; see :mod:`.style`.
 """
@@ -185,6 +186,115 @@ def compose(
     return figure
 
 
+def grid(
+    images: list[list[np.ndarray | None]],
+    *,
+    titles: list[list[str | None]],
+    column_labels: tuple[str, ...],
+    row_labels: tuple[str, ...],
+    x_label: str,
+    y_label: str,
+    title: str | None,
+    layer: Layer,
+    value_range: tuple[float, float],
+    colorbar_label: str,
+    aspect: float,
+    style: dict[str, Any],
+) -> plt.Figure:
+    """Panels on the grid of two swept values, over one colourbar naming what they show.
+
+    ``images`` is rows from the top, each a list of columns from the left, and
+    ``None`` leaves a cell empty; ``titles`` is shaped alike, and a row of them is
+    given room above its panels only if any is set. Each column's label goes
+    under the bottom row with ``x_label`` under those, and each row's label to
+    the left with ``y_label`` beside those, as a plot's axes are labelled.
+
+    One colourbar for the grid rather than one per panel, as a detail row has:
+    every panel is drawn against ``value_range``, so a colour means one value
+    anywhere on the figure. ``colorbar_label`` goes under it, where a horizontal
+    colourbar's label goes, and ``title``, if any, above the grid. Sized as
+    :func:`compose` sizes, in panel heights, so a panel's cell has its image's
+    shape.
+    """
+
+    configure_tex_like_fonts()
+    n_rows, n_columns = len(images), len(column_labels)
+    if len(row_labels) != n_rows or len(titles) != n_rows:
+        raise ValueError("one row label and one row of titles per row of panels")
+    if any(len(row) != n_columns for row in (*images, *titles)):
+        raise ValueError("one column label, image and title per column of panels")
+
+    pixels, dpi = style["panel_pixels"], style["dpi"]
+    label_size = style["title_font_size"]
+    value_size = style["colorbar_label_font_size"]
+    pad = mpl.rcParams["axes.titlepad"]
+    label_band = _in_panels(pad + label_size, style)
+    value_band = _in_panels(pad + value_size, style)
+    titled = any(text is not None for row in titles for text in row)
+
+    heights: list[float] = []
+    if title is not None:
+        heights.append(label_band)
+    panel_rows = []
+    for _ in range(n_rows):
+        if titled:
+            heights.append(value_band)
+        panel_rows.append(len(heights))
+        heights.append(1.0)
+    value_row = len(heights)
+    heights.extend((value_band, label_band))
+    heights.append(
+        _in_panels(style["split_colorbar_height"] * style["colorbar_tick_font_size"], style)
+    )
+    heights.append(label_band)
+    widths = [label_band, value_band] + [aspect] * n_columns
+    # Panels start after the y label's column and the row labels'.
+    first = 2
+
+    figure = plt.figure(
+        figsize=(pixels * sum(widths) / dpi, pixels * sum(heights) / dpi), dpi=dpi
+    )
+    cells = figure.add_gridspec(
+        len(heights),
+        len(widths),
+        width_ratios=widths,
+        height_ratios=heights,
+        left=0.0,
+        right=1.0,
+        bottom=0.0,
+        top=1.0,
+        wspace=0.0,
+        hspace=0.0,
+    )
+    if title is not None:
+        _centred_text(figure.add_subplot(cells[0, first:]), title, label_size)
+    for row, panel_row in enumerate(panel_rows):
+        _centred_text(
+            figure.add_subplot(cells[panel_row, 1]), row_labels[row], value_size, rotation=90
+        )
+        for column in range(n_columns):
+            axis = figure.add_subplot(cells[panel_row, first + column])
+            if images[row][column] is not None:
+                axis.imshow(images[row][column])
+            if titles[row][column] is not None:
+                axis.set_title(titles[row][column], fontsize=value_size, color="black")
+            axis.set_axis_off()
+    for column, label in enumerate(column_labels):
+        _centred_text(figure.add_subplot(cells[value_row, first + column]), label, value_size)
+    _centred_text(figure.add_subplot(cells[value_row + 1, first:]), x_label, label_size)
+    _centred_text(
+        figure.add_subplot(cells[panel_rows[0] : panel_rows[-1] + 1, 0]),
+        y_label,
+        label_size,
+        rotation=90,
+    )
+    _range_colorbar(
+        figure.add_subplot(cells[value_row + 2, first:]), layer, value_range, style
+    )
+    _centred_text(figure.add_subplot(cells[value_row + 3, first:]), colorbar_label, label_size)
+    return figure
+
+
 def save(figure: plt.Figure, path: Path, *, dpi: float) -> None:
     """Write ``figure`` to ``path``, cropped to what is drawn, and close it."""
 
@@ -214,6 +324,25 @@ def _panel_title(axis: plt.Axes, title: str | None, style: dict[str, Any]) -> No
     if title is None:
         return
     axis.set_title(title, fontsize=style["title_font_size"], color="black")
+
+
+def _centred_text(
+    axis: plt.Axes, text: str, size: float, *, rotation: float = 0.0
+) -> None:
+    """``text`` in the middle of a cell of its own, which is all the cell holds."""
+
+    axis.text(
+        0.5,
+        0.5,
+        text,
+        color="black",
+        fontsize=size,
+        ha="center",
+        va="center",
+        rotation=rotation,
+        transform=axis.transAxes,
+    )
+    axis.set_axis_off()
 
 
 def _range_colorbar(

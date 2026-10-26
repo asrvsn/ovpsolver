@@ -33,7 +33,7 @@ python -m ovpsolver.model_b
 usage: python -m ovpsolver.model_b [-h]
                                    run | analyze.conservation | analyze.drag_floor | analyze.emptying | analyze.fields | analyze.gelation | analyze.mesh_correlation | analyze.moments |
                                    analyze.positivity | analyze.roundtrip | analyze.saturation | analyze.stats | analyze.surface_leakage | analyze.wetting | visualize.domain |
-                                   visualize.gelation | visualize.phases | visualize.phases_movie ...
+                                   visualize.gelation | visualize.phases | visualize.phases_movie | visualize.sweep ...
 ```
 
 We'll use `ovpsolver.SYSTEM` as a generic placeholder (the other system provided is `ovpsolver.polymerizing_b`).
@@ -194,6 +194,35 @@ The `save` declaration in the spec defines a directory to which all run data are
 python -m ovpsolver.SYSTEM run SAVE_DIR/spec.yaml --resume
 ```
 
+### Parameter sweeps
+
+One can also generate and run parameter sweeps, providing zipped and Cartesian-product parameter sets, indexing into the spec as such:
+
+```bash
+python -m ovpsolver.polymerizing_b run examples/pips_coarse.yaml \
+    --sweep-zip 'phase_fields.sol[0].kappa=[1e-3, 2e-3, 4e-3]' \
+                'phase_fields.sol[0].surface_affinity=[0.01, 0.014, 0.02]' \
+                'phase_fields.polymerizing[0].kappa=[1e-3, 2e-3, 4e-3]' \
+                'phase_fields.polymerizing[0].surface_affinity=[-0.01, -0.014, -0.02]' \
+    --sweep 'phase_fields.polymerizing[0].crosslinking_rate=[1.56, 3.125, 6.25, 12.5, 25]'
+```
+
+which in this case produces 15 runs of `kappa` x `crosslinking_rate`.
+Similarly, visualization of the sweep can easily be done in one command via:
+
+```bash
+python -m ovpsolver.polymerizing_b visualize.sweep examples/pips_coarse.yaml \
+    --sweep-zip 'phase_fields.sol[0].kappa=[1e-3, 2e-3, 4e-3]' \
+                'phase_fields.sol[0].surface_affinity=[0.01, 0.014, 0.02]' \
+                'phase_fields.polymerizing[0].kappa=[1e-3, 2e-3, 4e-3]' \
+                'phase_fields.polymerizing[0].surface_affinity=[-0.01, -0.014, -0.02]' \
+    --sweep 'phase_fields.polymerizing[0].crosslinking_rate=[1.56, 3.125, 6.25, 12.5, 25]' \
+    --x 'phase_fields.sol[0].kappa' --x-label '$\kappa$' \
+    --y 'phase_fields.polymerizing[0].crosslinking_rate' --y-label '$\gamma$' \
+    --field 'protein.phi_gel=$\phi_{\rm gel}$' --save
+```
+
+with each panel rendered the last saved frame, and timestamp shown.
 
 
 ### Analysis of runs

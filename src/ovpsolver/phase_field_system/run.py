@@ -30,7 +30,6 @@ hand means exactly what it says.
 
 from __future__ import annotations
 
-import argparse
 import gc
 import logging
 import os
@@ -51,7 +50,7 @@ from ..solver.progress import SAVE
 from .entry import EntryPoint
 from .parameters import SpecParameters
 from .resume import Resume
-from .sweep import PRODUCT, ZIP, Sweep, SweepFailed, Variant
+from . import sweep as sweeps
 
 logger = logging.getLogger(__name__)
 
@@ -331,19 +330,6 @@ def _build_and_step(
     return reached
 
 
-class _Group(argparse.Action):
-    """Files every ``--sweep`` and ``--sweep-zip`` in one list, in the order given.
-
-    One list rather than one per option, because the order of the axes is the
-    order of the runs, and argparse keeps no order between two destinations.
-    """
-
-    def __call__(self, parser, namespace, values, option_string=None) -> None:
-        setattr(
-            namespace, self.dest, [*getattr(namespace, self.dest), (self.const, list(values))]
-        )
-
-
 # An EntryPoint rather than a SpecEntryPoint, whose single positional this
 # replaces: only the alternative that produces runs has a use for several specs.
 class RunSpec(EntryPoint):
@@ -402,34 +388,11 @@ class RunSpec(EntryPoint):
             "restart point it last committed. Frames after it are rewritten; "
             "everything up to it is kept",
         )
-        parser.add_argument(
-            "--sweep",
-            nargs="+",
-            action=_Group,
-            const=PRODUCT,
-            dest="sweep",
-            default=[],
-            metavar="ADDRESS=VALUES",
-            help="run every combination, each assignment an axis of its own. An "
-            "address is a path into the system block, as phase_fields.sol[0].kappa; "
-            "the values are a YAML list, as [1, 2, 3]. Quote each assignment, and "
-            "name the specs first",
-        )
-        parser.add_argument(
-            "--sweep-zip",
-            nargs="+",
-            action=_Group,
-            const=ZIP,
-            dest="sweep",
-            default=[],
-            metavar="ADDRESS=VALUES",
-            help="step these assignments together, as one axis, so each needs as "
-            "many values as the others",
-        )
+        sweeps.add_options(parser)
 
     def prepare(self, arguments: dict[str, Any]) -> dict[str, Any]:
         groups = arguments.pop("sweep")
-        return {**arguments, "sweep": Sweep.from_groups(groups) if groups else None}
+        return {**arguments, "sweep": sweeps.Sweep.from_groups(groups) if groups else None}
 
     def __call__(
         self,
@@ -439,7 +402,7 @@ class RunSpec(EntryPoint):
         n_steps: int | None = None,
         overwrite: bool = False,
         resume: bool = False,
-        sweep: "Sweep | None" = None,
+        sweep: "sweeps.Sweep | None" = None,
     ) -> "list[float | None]":
         """Each run in turn; returns what each reached, in order.
 
@@ -453,7 +416,7 @@ class RunSpec(EntryPoint):
         first one again. A sweep goes on to the next run, since where a sweep
         fails depends on the values -- the deepest quench diverging while the
         shallow ones do not -- and the runs that would succeed are the point of
-        it. Each failure is in its run's log, and a :class:`SweepFailed` naming
+        it. Each failure is in its run's log, and a :class:`~.sweep.SweepFailed` naming
         them is raised once the last run is over. An interrupt stops either.
 
         ``--resume`` continues one run from its own restart point, so it is
@@ -468,7 +431,7 @@ class RunSpec(EntryPoint):
         )
         with scratch as directory:
             runs = (
-                [Variant(Path(one), Path(one), ()) for one in specs]
+                [sweeps.Variant(Path(one), Path(one), ()) for one in specs]
                 if sweep is None
                 else [
                     variant
@@ -520,20 +483,20 @@ class RunSpec(EntryPoint):
                     del error
                     gc.collect()
             if failures:
-                raise SweepFailed(reached, failures)
+                raise sweeps.SweepFailed(reached, failures)
             return reached
 
     @staticmethod
     def check(
         system_class: "type[PhaseFieldSystem]",
-        runs: "Sequence[Variant]",
+        runs: "Sequence[sweeps.Variant]",
         *,
         overwrite: bool,
         resume: bool,
     ) -> list[Path]:
         """Read every run and check its directory, clearing nothing; returns the directories."""
 
-        claimed: dict[Path, Variant] = {}
+        claimed: dict[Path, sweeps.Variant] = {}
         for run in runs:
             save = read(system_class.Parameters, run.path, relative_to=run.origin).solver.save
             directory = Path(os.path.abspath(save.directory))
@@ -547,5 +510,5 @@ class RunSpec(EntryPoint):
         return list(claimed)
 
 
-def _named(run: Variant) -> str:
+def _named(run: sweeps.Variant) -> str:
     return f"{run.origin} with {run.describe()}" if run.settings else str(run.origin)

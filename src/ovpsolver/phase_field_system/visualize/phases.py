@@ -123,7 +123,7 @@ def plot(
             replace(layer, color=None, colormap=aux_cmap) if layer.is_phase else layer
             for layer in split
         )
-    details = split + _aux_layers(sources[0], tuple(aux_fields), aux_cmap)
+    details = split + aux_layers(sources[0], tuple(aux_fields), aux_cmap)
     if split_fields and diffuse_domain:
         # The inclusions are context in a composite, and a row of their own
         # would say nothing: chi does not change over a run.
@@ -228,7 +228,7 @@ def _summary_layers(
     return tuple(layers)
 
 
-def _aux_layers(
+def aux_layers(
     source: Source, names: tuple[str, ...], colormap: str | None
 ) -> tuple[Layer, ...]:
     """A detail row per named saved field, coloured by value.

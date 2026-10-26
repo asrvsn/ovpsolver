@@ -48,11 +48,14 @@ A run's directory is the original's with ``-label=value`` appended for each swep
 address, where ``label`` is the shortest trailing part of the address that no
 other swept address ends in: ``scratch/pips-sol.0.kappa=0.0005-polymerizing.0.kappa=0.0005-chi_01=3``.
 Not ``label:value``, since a colon is the path separator of the macOS Finder and
-is refused by Windows, and with it by a synced tree.
+is refused by Windows, and with it by a synced tree. The same spec and options
+name the same directories, which is how ``visualize.sweep`` finds a sweep's runs
+(:mod:`~ovpsolver.phase_field_system.visualize.sweep`).
 """
 
 from __future__ import annotations
 
+import argparse
 import copy
 import itertools
 import math
@@ -270,6 +273,52 @@ def assignments(words: Iterable[str]) -> list[Assignment]:
     return [Assignment.parse(piece) for piece in pieces]
 
 
+class Groups(argparse.Action):
+    """Files every ``--sweep`` and ``--sweep-zip`` in one list, in the order given.
+
+    One list rather than one per option, because the order of the axes is the
+    order of the runs, and argparse keeps no order between two destinations.
+    """
+
+    def __call__(self, parser, namespace, values, option_string=None) -> None:
+        setattr(
+            namespace, self.dest, [*getattr(namespace, self.dest), (self.const, list(values))]
+        )
+
+
+def add_options(parser: argparse.ArgumentParser) -> None:
+    """``--sweep`` and ``--sweep-zip``, filed together as ``sweep`` for :meth:`Sweep.from_groups`.
+
+    Declared here for every command that takes a sweep, so that drawing a sweep
+    is asked for in the words that ran it.
+    """
+
+    parser.add_argument(
+        "--sweep",
+        nargs="+",
+        action=Groups,
+        const=PRODUCT,
+        dest="sweep",
+        default=[],
+        metavar="ADDRESS=VALUES",
+        help="every combination, each assignment an axis of its own. An address "
+        "is a path into the system block, as phase_fields.sol[0].kappa; the values "
+        "are a YAML list, as [1, 2, 3]. Quote each assignment, and name the specs "
+        "first",
+    )
+    parser.add_argument(
+        "--sweep-zip",
+        nargs="+",
+        action=Groups,
+        const=ZIP,
+        dest="sweep",
+        default=[],
+        metavar="ADDRESS=VALUES",
+        help="step these assignments together, as one axis, so each needs as "
+        "many values as the others",
+    )
+
+
 @dataclass(frozen=True)
 class Variant:
     """One run of a sweep: the spec it varies, the file written for it, what it sets.
@@ -283,7 +332,7 @@ class Variant:
 
     def describe(self) -> str:
         return ", ".join(
-            f"{render(assignment.address)}={_flow(value)}"
+            f"{render(assignment.address)}={flow(value)}"
             for assignment, value in self.settings
         )
 
@@ -373,6 +422,37 @@ class Sweep:
             labels[address] = ".".join(_safe(str(step)) for step in tail)
         return labels
 
+    def directories(self, spec: "str | Path") -> list[Path]:
+        """Where each run of this sweep over ``spec`` writes, in run order.
+
+        The spec's own output directory with ``-label=value`` appended per swept
+        address. So the same spec and options find the runs again, which is how
+        a figure of the sweep is pointed at them. Every address is looked up in
+        the spec first, so a typo is reported with the keys that are there
+        rather than as a run that does not exist.
+        """
+
+        origin = Path(spec).expanduser().resolve()
+        document = _document(origin.read_text(encoding="utf-8"), origin.name)
+        for address in self.addresses():
+            lookup(document, (ROOT, *address), origin.name)
+        base = base_directory(origin)
+        labels = self.labels()
+        directories = []
+        for settings in self.points():
+            name = base.name + "".join(
+                f"-{labels[assignment.address]}={_name_of(value)}"
+                for assignment, value in settings
+            )
+            if len(name.encode()) > NAME_MAX:
+                raise SweepError(
+                    f"{origin.name}: the run directory {name!r} is longer than a file "
+                    f"name can be; sweep fewer addresses at once, or shorten "
+                    f"solver.save.path"
+                )
+            directories.append(base.with_name(name))
+        return directories
+
     def variants(self, spec: "str | Path", scratch: Path) -> list[Variant]:
         """Write one variant of ``spec`` per run under ``scratch``, in run order.
 
@@ -383,35 +463,18 @@ class Sweep:
         origin = Path(spec).expanduser().resolve()
         where = origin.name
         text = origin.read_text(encoding="utf-8")
-        document = yaml.safe_load(text)
-        if not isinstance(document, dict):
-            raise SweepError(f"{where} must contain a mapping at the top level")
-        for address in self.addresses():
-            lookup(document, (ROOT, *address), where)
-        saved = lookup(document, SAVE_PATH, where)
-        if not isinstance(saved, str):
-            raise SweepError(f"{where}: {render(SAVE_PATH)} is not a path: {saved!r}")
-        # Absolute, so that a spec saving to '.' -- one archived by a run --
-        # still has a name to extend.
-        base = Path(os.path.abspath(origin.parent / Path(saved).expanduser()))
+        document = _document(text, where)
+        directories = self.directories(origin)
 
         own = Path(tempfile.mkdtemp(prefix=f"{origin.stem}-", dir=scratch))
-        labels = self.labels()
         points = self.points()
         variants = []
-        for number, settings in enumerate(points, start=1):
-            name = base.name + "".join(
-                f"-{labels[assignment.address]}={_name_of(value)}"
-                for assignment, value in settings
-            )
-            if len(name.encode()) > NAME_MAX:
-                raise SweepError(
-                    f"{where}: the run directory {name!r} is longer than a file name "
-                    f"can be; sweep fewer addresses at once, or shorten solver.save.path"
-                )
+        for number, (settings, directory) in enumerate(
+            zip(points, directories, strict=True), start=1
+        ):
             edits = {(ROOT, *assignment.address): value for assignment, value in settings}
-            edits[SAVE_PATH] = str(base.with_name(name))
-            path = own / f"{name}{origin.suffix}"
+            edits[SAVE_PATH] = str(directory)
+            path = own / f"{directory.name}{origin.suffix}"
             path.write_text(
                 _header(origin, number, len(points), settings)
                 + rewrite(text, document, edits, where),
@@ -419,6 +482,21 @@ class Sweep:
             )
             variants.append(Variant(origin, path, settings))
         return variants
+
+
+def base_directory(spec: "str | Path") -> Path:
+    """Where ``spec`` saves, which is what every run of a sweep over it extends.
+
+    Absolute, so that a spec saving to ``.`` -- one archived by a run -- still
+    has a name to extend.
+    """
+
+    origin = Path(spec).expanduser().resolve()
+    document = _document(origin.read_text(encoding="utf-8"), origin.name)
+    saved = lookup(document, SAVE_PATH, origin.name)
+    if not isinstance(saved, str):
+        raise SweepError(f"{origin.name}: {render(SAVE_PATH)} is not a path: {saved!r}")
+    return Path(os.path.abspath(origin.parent / Path(saved).expanduser()))
 
 
 ## Rewriting a spec's text
@@ -434,7 +512,7 @@ def rewrite(text: str, document: Any, edits: dict[Address, Any], where: str) -> 
 
     root = yaml.compose(text, Loader=yaml.SafeLoader)
     spans = sorted(
-        (*_span(_node_at(root, address, where)), _flow(value))
+        (*_span(_node_at(root, address, where)), flow(value))
         for address, value in edits.items()
     )
     for (_, end, _), (start, _, _) in zip(spans, spans[1:]):
@@ -496,7 +574,7 @@ def _header(
         f"# Run {number} of {total} of a sweep over the spec",
         f"#   {origin}",
         "# with its own solver.save.path, and these values under system:",
-        *(f"#   {render(assignment.address)} = {_flow(value)}" for assignment, value in settings),
+        *(f"#   {render(assignment.address)} = {flow(value)}" for assignment, value in settings),
         "#",
         "",
     ]
@@ -535,7 +613,7 @@ def _read_values(text: str, assignment: str) -> tuple[Any, ...]:
     return tuple(values)
 
 
-def _flow(value: Any) -> str:
+def flow(value: Any) -> str:
     """``value`` as YAML on one line, as a spec would write it."""
 
     text = yaml.safe_dump(
@@ -551,7 +629,7 @@ def _flow(value: Any) -> str:
 def _name_of(value: Any) -> str:
     """A value as a directory name reads it: a float shortest-exact, the rest as YAML."""
 
-    return _safe(repr(value) if isinstance(value, float) else _flow(value))
+    return _safe(repr(value) if isinstance(value, float) else flow(value))
 
 
 def _safe(text: str) -> str:
@@ -562,6 +640,13 @@ def _safe(text: str) -> str:
 
 def _canonical(document: Any) -> str:
     return yaml.safe_dump(document, sort_keys=True)
+
+
+def _document(text: str, where: str) -> dict:
+    document = yaml.safe_load(text)
+    if not isinstance(document, dict):
+        raise SweepError(f"{where} must contain a mapping at the top level")
+    return document
 
 
 def _key(mapping: dict, step: str) -> Any:
@@ -578,4 +663,4 @@ def _kind(node: Any) -> str:
         return "a mapping"
     if isinstance(node, list):
         return "a list"
-    return f"the value {_flow(node)}"
+    return f"the value {flow(node)}"

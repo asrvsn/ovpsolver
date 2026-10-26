@@ -19,7 +19,7 @@ The pieces, in the order data moves through them:
     values to colours, and colours to pixels, through pyvista.
 :mod:`.figure`
     pixels to a page, through matplotlib.
-:mod:`.domain`, :mod:`.phases`, :mod:`.phases_movie`, :mod:`.gelation`
+:mod:`.domain`, :mod:`.phases`, :mod:`.phases_movie`, :mod:`.gelation`, :mod:`.sweep`
     the figures and the movie, each an entry point. :mod:`.domain` needs no run:
     it draws the geometry a spec declares.
 
@@ -48,9 +48,11 @@ _LAZY = {
     "VisualizeGelation": "gelation",
     "VisualizePhases": "phases",
     "VisualizePhasesMovie": "phases_movie",
+    "VisualizeSweep": "sweep",
     "movie": "phases_movie",
     "plot": "phases",
     "plot_gelation": "gelation",
+    "plot_sweep": "sweep",
 }
 
 __all__ = [
@@ -70,10 +72,12 @@ __all__ = [
     "VisualizeGelation",
     "VisualizePhases",
     "VisualizePhasesMovie",
+    "VisualizeSweep",
     "font_size",
     "movie",
     "plot",
     "plot_gelation",
+    "plot_sweep",
 ]
 
 

@@ -204,10 +204,11 @@ def grid(
     ``images`` is rows from the top, each a list of columns from the left, and
     ``None`` leaves a cell empty; ``titles`` and ``ranges`` are shaped alike.
     Each row's label goes left of its first panel and each column's under its
-    bottom one, as a plot's ticks do, and no room is kept for them anywhere
-    else. Every panel has its title above it and to its right a colourbar over
-    its own range, named ``colorbar_label``; an empty cell keeps its title,
-    which says why, and has no colourbar.
+    bottom one, as a plot's ticks do, and ``colorbar_label`` right of each row's
+    last colourbar; no room is kept for them anywhere else. Every panel has its
+    title above it and to its right a colourbar over its own range, its two ends
+    numbered; an empty cell keeps its title, which says why, and has no
+    colourbar.
 
     ``title``, if any, goes above the grid. Sized as :func:`compose` sizes, in
     panel heights, so a panel's cell has its image's shape. Every label is title
@@ -230,17 +231,18 @@ def grid(
     # under a panel; the bar is as thick, for that size, as a detail row's.
     numbers = style["colorbar_label_font_size"]
     bar = _in_panels(style["split_colorbar_height"] * numbers, style)
-    # Half a label's height between cells, so that one panel's colourbar name
-    # is not read as its neighbour's, nor one panel's title as the panel above's.
+    # Half a label's height between cells, so that one panel's colourbar is not
+    # read as its neighbour's, nor one panel's title as the panel above's.
     gap = 0.5 * band
-    # Across: the row labels, then per column the panel, its colourbar and the
-    # colourbar's name. Down: per row its titles and panels, then the column
+    # Across: the row labels, then per column the panel and its colourbar, then
+    # the colourbars' name. Down: per row its titles and panels, then the column
     # labels.
     widths: list[float] = [band]
     panel_columns = []
     for column in range(n_columns):
-        widths.extend(([gap] if column else []) + [aspect, bar, band])
-        panel_columns.append(len(widths) - 3)
+        widths.extend(([gap] if column else []) + [aspect, bar])
+        panel_columns.append(len(widths) - 2)
+    widths.append(band)
     heights: list[float] = [band] if title is not None else []
     panel_rows = []
     for row in range(n_rows):
@@ -282,11 +284,9 @@ def grid(
                     vertical=True,
                     font_size=numbers,
                 )
-                _centred_text(
-                    figure.add_subplot(cells[y, x + 2]), colorbar_label, size, rotation=90
-                )
     for row, y in enumerate(panel_rows):
         _centred_text(figure.add_subplot(cells[y, 0]), row_labels[row], size, rotation=90)
+        _centred_text(figure.add_subplot(cells[y, -1]), colorbar_label, size, rotation=90)
     for column, x in enumerate(panel_columns):
         _centred_text(figure.add_subplot(cells[-1, x]), column_labels[column], size)
     return figure

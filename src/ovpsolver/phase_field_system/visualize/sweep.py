@@ -42,8 +42,8 @@ The panels
 mixture's phase layers -- a phase's volume fraction, a polymerizing phase's sol
 or gel -- in that layer's colour from the spec, by opacity, and anything else by
 value through a colormap. ``--cmap`` draws a phase by value too, through the
-colorcet map it names. ``=LABEL`` after the field names it beside each
-colourbar, by default the field's saved name.
+colorcet map it names. ``=LABEL`` after the field names it once per row, right
+of the last column, by default the field's saved name.
 
 Each panel has its own colourbar over its own range, as each split row does:
 the runs of a sweep can differ by orders of magnitude, and one range would draw
@@ -107,7 +107,7 @@ def plot_sweep(
     """Draw ``field`` for every run of ``sweep`` over ``spec``, and return the figure.
 
     ``x`` and ``y`` are swept addresses as the command line spells them.
-    ``field_label`` names the field beside each colourbar, by default its saved
+    ``field_label`` names the field beside the last column, by default its saved
     name. ``frame`` counts from each run's end when negative.
     """
 
@@ -306,9 +306,9 @@ class VisualizeSweep(EntryPoint):
 
     Each panel is its run's last saved frame, drawn as --split-fields draws the
     field, with its time above it and its own colourbar to its right; each row
-    is labelled with its y value on the left, and each column with its x value
-    along the bottom. A run with nothing saved leaves its cell empty, titled
-    with why. Put labels in single quotes, which the shell passes
+    is labelled with its y value on the left and the field's name on the right,
+    and each column with its x value along the bottom. A run with nothing saved
+    leaves its cell empty, titled with why. Put labels in single quotes, which the shell passes
     on untouched, as Python's r'' does; in double quotes it would expand $t as a
     variable.
     """
@@ -356,7 +356,7 @@ class VisualizeSweep(EntryPoint):
             required=True,
             metavar="FIELD[=LABEL]",
             help="the saved field to draw, by its saved name as --aux-fields takes "
-            "it, and optionally the label to name it by beside each colourbar, as "
+            "it, and optionally the label to name it by beside the last column, as "
             "'protein.phi_gel=$\\phi_{\\rm gel}$'; by default the saved name. A "
             "phase layer is drawn in its colour from the spec, as --split-fields "
             "draws it, and anything else by value",

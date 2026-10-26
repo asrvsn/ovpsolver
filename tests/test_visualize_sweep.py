@@ -139,7 +139,8 @@ def test_a_grid_labels_each_row_and_column_once_and_gives_each_drawn_panel_a_col
     assert texts.count(r"$\kappa = 0.002$") == 1 and texts.count(r"$\gamma = 3$") == 1
     # Five panels and five colourbars; the empty cell draws neither.
     assert len([axis for axis in figure.axes if axis.images]) == 10
-    assert texts.count(r"$\phi_{\rm gel}$") == 5
+    # Named once per row, beside the last column.
+    assert texts.count(r"$\phi_{\rm gel}$") == 2
     # Each panel's cell is its image's shape, 60 by 40 pixels at this dpi.
     first = next(axis for axis in figure.axes if axis.images)
     width, height = first.get_position().size * figure.get_size_inches() * figure.dpi

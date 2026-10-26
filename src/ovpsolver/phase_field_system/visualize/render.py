@@ -194,6 +194,23 @@ def scalar_rgba(
     )
 
 
+def layer_rgba(
+    values: np.ndarray,
+    layer: Layer,
+    value_range: tuple[float, float],
+    style: dict[str, Any],
+) -> np.ndarray:
+    """One layer drawn alone over ``value_range``, as a detail panel draws it.
+
+    A phase in its own hue, by opacity (:func:`phase_rgba`), and anything else by
+    value through a colormap (:func:`scalar_rgba`).
+    """
+
+    if layer.is_phase:
+        return phase_rgba(values, layer.color, value_range)
+    return scalar_rgba(values, value_range, colormap=layer.colormap, style=style)
+
+
 def is_degenerate(vmin: float, vmax: float) -> bool:
     """Whether a range has no width to normalize over.
 

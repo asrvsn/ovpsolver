@@ -314,16 +314,10 @@ def _render(
         for source in sources:
             values, association = source.frame.layer(layer)
             span = (float(np.min(values)), float(np.max(values)))
-            if layer.is_phase:
-                rgba = render.phase_rgba(values, layer.color, span)
-            else:
-                rgba = render.scalar_rgba(
-                    values, span, colormap=layer.colormap, style=style
-                )
             row.append(
                 render.panel(
                     grids[association],
-                    rgba,
+                    render.layer_rgba(values, layer, span, style),
                     association=association,
                     view=view,
                     style=style,

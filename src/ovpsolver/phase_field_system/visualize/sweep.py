@@ -4,8 +4,8 @@
         --sweep-zip 'phase_fields.sol[0].kappa=[1e-3, 2e-3, 4e-3]' \\
                     'phase_fields.polymerizing[0].kappa=[1e-3, 2e-3, 4e-3]' \\
         --sweep 'phase_fields.polymerizing[0].crosslinking_rate=[1.56, 3.125, 6.25]' \\
-        --x 'phase_fields.sol[0].kappa' --x-label '$\\kappa$' \\
-        --y 'phase_fields.polymerizing[0].crosslinking_rate' --y-label '$\\gamma$' \\
+        --x 'phase_fields.polymerizing[0].crosslinking_rate' --x-label '$\\gamma$' \\
+        --y 'phase_fields.sol[0].kappa' --y-label '$\\kappa$' \\
         --field 'protein.phi_gel=$\\phi_{\\rm gel}$' --save
 
 The spec and the ``--sweep`` and ``--sweep-zip`` options are the ones the sweep
@@ -22,9 +22,13 @@ address on one of them, whose values run along the columns, and ``--y`` one on
 the other, whose values run up the rows: the figure reads as a plot of the two
 does, the first values at the bottom left. Either may be left off, for the first
 address of the axis the other did not take; with neither, x is the last axis
-given, the one varying fastest through the runs, and y the first. ``--x-label``
-and ``--y-label`` name them as matplotlib text, so ``'$\\kappa$'`` is a kappa; by
-default each is its address's label in the run directories.
+given, the one varying fastest through the runs, and y the first.
+
+Every panel is labelled with its own coordinates rather than sharing axes with
+its neighbours: its y value to its left, its x value under it, the time of its
+frame above it. ``--x-label`` and ``--y-label`` name the two as matplotlib text,
+so ``'$\\kappa$'`` labels a panel ``$\\kappa = 0.001$``; by default each is its
+address's label in the run directories.
 
 A label reaches matplotlib exactly as the shell hands it over, since nothing in
 Python unescapes the command line, so there is no ``r''`` to write. The shell's
@@ -33,20 +37,24 @@ double quotes it expands ``$t`` as a variable.
 
 The panels
 ----------
-``--field`` is any saved field ``visualize.phases --aux-fields`` draws, coloured
-by value as that draws it, optionally followed by ``=LABEL`` to name it under the
-colourbar; by default the colourbar says the field's saved name. Every panel is
-drawn against one range, the field's extent over all the runs, under that one
-colourbar: a colour means one value in every panel, which is what makes
-neighbouring runs comparable. ``--range`` fixes the range instead, so that two
-figures can be compared.
+``--field`` is any saved field ``visualize.phases --aux-fields`` takes, drawn as
+``visualize.phases --split-fields`` draws its rows: a field that is one of the
+mixture's phase layers -- a phase's volume fraction, a polymerizing phase's sol
+or gel -- in that layer's colour from the spec, by opacity, and anything else by
+value through a colormap. ``--cmap`` draws a phase by value too, through the
+colorcet map it names. ``=LABEL`` after the field names it beside each
+colourbar, by default the field's saved name.
+
+Each panel has its own colourbar over its own range, as each split row does:
+the runs of a sweep can differ by orders of magnitude, and one range would draw
+all but the largest flat. ``--range`` gives every panel the same one instead.
 
 Each panel is its run's last saved frame, so the figure is what the sweep ended
-at; ``--frame`` picks another. Each is titled with its frame's time, which is
-not one time across the figure: a run that failed ended early. A run with
-nothing to draw -- not run yet, or failed before its first frame -- leaves its
-cell empty under a title saying so, rather than refusing the figure: a sweep
-goes on past a failed run, and its figure is of what the sweep did.
+at; ``--frame`` picks another. The times are not one time across the figure,
+since a run that failed ended early. A run with nothing to draw -- not run yet,
+or failed before its first frame -- leaves its cell empty under a title saying
+so, rather than refusing the figure: a sweep goes on past a failed run, and its
+figure is of what the sweep did.
 """
 
 from __future__ import annotations
@@ -99,7 +107,7 @@ def plot_sweep(
     """Draw ``field`` for every run of ``sweep`` over ``spec``, and return the figure.
 
     ``x`` and ``y`` are swept addresses as the command line spells them.
-    ``field_label`` names the field under the colourbar, by default its saved
+    ``field_label`` names the field beside each colourbar, by default its saved
     name. ``frame`` counts from each run's end when negative.
     """
 
@@ -110,37 +118,53 @@ def plot_sweep(
         raise ValueError(f"a range is VMIN VMAX, the first below the second; got {value_range}")
 
     # The runs are every combination of the axes, the last varying fastest, so
-    # a run's place on the grid is its index along each. Only what drawing needs
-    # is kept, not the run, whose mesh and spaces would be held for every run
-    # at once.
-    drawn: dict[tuple[int, int], dict[str, Any]] = {}
-    empty: dict[tuple[int, int], str] = {}
-    missing: list[str] = []
+    # a run's place on the grid is its index along each. Each panel is drawn as
+    # its run is read, and only the image kept: the run's mesh and spaces, held
+    # for every run at once, are the most memory a sweep figure could take.
+    n_columns, n_rows = len(columns.values), len(rows.values)
+    images: list[list[np.ndarray | None]] = [[None] * n_columns for _ in range(n_rows)]
+    titles: list[list[str | None]] = [[None] * n_columns for _ in range(n_rows)]
+    ranges: list[list[tuple[float, float] | None]] = [[None] * n_columns for _ in range(n_rows)]
+    layer, aspect, sizes, missing = None, None, set(), []
     places = itertools.product(*(range(len(axis[0].values)) for axis in sweep.axes))
     for indices, directory in zip(places, directories, strict=True):
-        place = (indices[across], indices[up])
+        # Rows are laid out from the top, and y runs up.
+        row, column = n_rows - 1 - indices[up], indices[across]
         source = open_run(system_class, directory, frame, with_ddm_floor=with_ddm_floor)
         if isinstance(source, str):
-            empty[place] = source
+            titles[row][column] = source
             missing.append(f"  {directory}: {source}")
             continue
+        # The --aux-fields layer, which checks the run saved the field, unless
+        # the field is a phase layer and so has a colour of its own.
         (layer,) = aux_layers(source, (field,), cmap)
+        if cmap is None:
+            layer = next(
+                (one for one in source.parameters.phase_layers() if one.field == field),
+                layer,
+            )
         if not diffuse_domain:
             layer = replace(layer, chi=PLAIN)
         values, association = source.frame.layer(layer)
+        span = value_range or (float(np.min(values)), float(np.max(values)))
         mesh = source.run.mesh
-        drawn[place] = {
-            "values": values,
-            "association": association,
-            "grid": render.grids(mesh)[association],
-            "view": render.camera(mesh, style),
-            "time": f"$t = {source.frame.time:.3g}$",
-        }
+        view = render.camera(mesh, style)
+        images[row][column] = render.panel(
+            render.grids(mesh)[association],
+            render.layer_rgba(values, layer, span, style),
+            association=association,
+            view=view,
+            style=style,
+        )
+        titles[row][column] = f"$t = {source.frame.time:.3g}$"
+        ranges[row][column] = span
+        aspect = view["aspect"]
+        sizes.add(view["window_size"])
 
-    if not drawn:
+    if layer is None:
         raise ValueError(
-            f"none of the {len(directories)} runs of this sweep has a frame to draw: "
-            f"{', '.join(sorted(set(empty.values())))}"
+            f"none of the {len(directories)} runs of this sweep has a frame to draw:\n"
+            + "\n".join(missing)
         )
     if missing:
         print(
@@ -150,47 +174,24 @@ def plot_sweep(
             sep="\n",
             file=sys.stderr,
         )
-    if len({panel["view"]["window_size"] for panel in drawn.values()}) > 1:
+    if len(sizes) > 1:
         raise ValueError(
             "the runs' meshes are different shapes, so their panels do not tile one grid"
         )
-    if value_range is None:
-        value_range = (
-            min(float(np.min(panel["values"])) for panel in drawn.values()),
-            max(float(np.max(panel["values"])) for panel in drawn.values()),
-        )
-
-    titles = {**empty, **{place: panel["time"] for place, panel in drawn.items()}}
-    n_columns, n_rows = len(columns.values), len(rows.values)
-    # Rows are laid out from the top, and y runs up.
-    images: list[list[np.ndarray | None]] = [[None] * n_columns for _ in range(n_rows)]
-    for (column, row), panel in drawn.items():
-        images[n_rows - 1 - row][column] = render.panel(
-            panel["grid"],
-            render.scalar_rgba(
-                panel["values"], value_range, colormap=layer.colormap, style=style
-            ),
-            association=panel["association"],
-            view=panel["view"],
-            style=style,
-        )
 
     labels = sweep.labels()
+    x_label = labels[columns.address] if x_label is None else x_label
+    y_label = labels[rows.address] if y_label is None else y_label
     figure = figures.grid(
         images,
-        titles=[
-            [titles.get((column, n_rows - 1 - top)) for column in range(n_columns)]
-            for top in range(n_rows)
-        ],
-        column_labels=tuple(sweeps.flow(value) for value in columns.values),
-        row_labels=tuple(sweeps.flow(value) for value in reversed(rows.values)),
-        x_label=labels[columns.address] if x_label is None else x_label,
-        y_label=labels[rows.address] if y_label is None else y_label,
-        title=title,
+        titles=titles,
+        row_labels=tuple(equation(y_label, value) for value in reversed(rows.values)),
+        column_labels=tuple(equation(x_label, value) for value in columns.values),
+        ranges=ranges,
         layer=layer,
-        value_range=value_range,
         colorbar_label=field if field_label is None else field_label,
-        aspect=next(iter(drawn.values()))["view"]["aspect"],
+        title=title,
+        aspect=aspect,
         style=style,
     )
 
@@ -205,6 +206,20 @@ def plot_sweep(
         figures.save(figure, path, dpi=style["dpi"])
         print(f"wrote {path}")
     return figure
+
+
+def equation(label: str, value: Any) -> str:
+    """``label = value``, set inside the label's mathtext when it is all mathtext.
+
+    So ``'$\\kappa$'`` and 0.001 make ``'$\\kappa = 0.001$'``, set as a panel's
+    ``'$t = ...$'`` title is, rather than a mathtext kappa beside an equals sign
+    and a number in the text face.
+    """
+
+    text = sweeps.flow(value)
+    if len(label) > 1 and label[0] == label[-1] == "$" and label.count("$") == 2:
+        return f"{label[:-1]} = {text}$"
+    return f"{label} = {text}"
 
 
 def grid_axes(
@@ -285,15 +300,16 @@ class VisualizeSweep(EntryPoint):
             --sweep-zip 'phase_fields.sol[0].kappa=[1e-3, 2e-3, 4e-3]' \\
                         'phase_fields.polymerizing[0].kappa=[1e-3, 2e-3, 4e-3]' \\
             --sweep 'phase_fields.polymerizing[0].crosslinking_rate=[1.56, 3.125, 6.25]' \\
-            --x 'phase_fields.sol[0].kappa' --x-label '$\\kappa$' \\
-            --y 'phase_fields.polymerizing[0].crosslinking_rate' --y-label '$\\gamma$' \\
+            --x 'phase_fields.polymerizing[0].crosslinking_rate' --x-label '$\\gamma$' \\
+            --y 'phase_fields.sol[0].kappa' --y-label '$\\kappa$' \\
             --field 'protein.phi_gel=$\\phi_{\\rm gel}$' --save
 
-    Each panel is its run's last saved frame, titled with its time, and every
-    panel is coloured over one range, said by one colourbar under the grid and
-    named under it. A run with nothing saved leaves its cell empty, titled with
-    why. Put labels in single quotes, which the shell passes on untouched, as
-    Python's r'' does; in double quotes it would expand $t as a variable.
+    Each panel is its run's last saved frame, drawn as --split-fields draws the
+    field, with its y value to its left, its x value under it, its time above it
+    and its own colourbar to its right. A run with nothing saved leaves its cell
+    empty, titled with why. Put labels in single quotes, which the shell passes
+    on untouched, as Python's r'' does; in double quotes it would expand $t as a
+    variable.
     """
 
     name = "visualize.sweep"
@@ -318,8 +334,9 @@ class VisualizeSweep(EntryPoint):
             "--x-label",
             dest="x_label",
             metavar="TEXT",
-            help="the x axis's name, as matplotlib text, so '$\\gamma$' is a gamma; "
-            "by default the address's label in the run directories",
+            help="the x value's name under each panel, as matplotlib text, so "
+            "'$\\gamma$' is a gamma; by default the address's label in the run "
+            "directories",
         )
         parser.add_argument(
             "--y",
@@ -328,15 +345,20 @@ class VisualizeSweep(EntryPoint):
             "by default the first of the first axis given",
         )
         parser.add_argument(
-            "--y-label", dest="y_label", metavar="TEXT", help="the y axis's name, as --x-label"
+            "--y-label",
+            dest="y_label",
+            metavar="TEXT",
+            help="the y value's name left of each panel, as --x-label",
         )
         parser.add_argument(
             "--field",
             required=True,
             metavar="FIELD[=LABEL]",
             help="the saved field to draw, by its saved name as --aux-fields takes "
-            "it, and optionally the label to name it by under the colourbar, as "
-            "'protein.phi_gel=$\\phi_{\\rm gel}$'; by default the saved name",
+            "it, and optionally the label to name it by beside each colourbar, as "
+            "'protein.phi_gel=$\\phi_{\\rm gel}$'; by default the saved name. A "
+            "phase layer is drawn in its colour from the spec, as --split-fields "
+            "draws it, and anything else by value",
         )
         parser.add_argument("--title", metavar="TEXT", help="a title above the grid; none by default")
         parser.add_argument(
@@ -348,7 +370,10 @@ class VisualizeSweep(EntryPoint):
             "run's end (default: -1, its last)",
         )
         parser.add_argument(
-            "--cmap", metavar="NAME", help="a colorcet colormap for the panels, e.g. isolum"
+            "--cmap",
+            metavar="NAME",
+            help="draw the field by value through this colorcet colormap, e.g. "
+            "isolum, even a phase, which is otherwise drawn in its own colour",
         )
         parser.add_argument(
             "--range",
@@ -356,7 +381,7 @@ class VisualizeSweep(EntryPoint):
             nargs=2,
             dest="value_range",
             metavar=("VMIN", "VMAX"),
-            help="the colour range, instead of the field's extent over all the runs",
+            help="one colour range for every panel, instead of each panel's own extent",
         )
         parser.add_argument(
             "--no-diffuse-domain",

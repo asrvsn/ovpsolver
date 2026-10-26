@@ -217,8 +217,8 @@ python -m ovpsolver.polymerizing_b visualize.sweep examples/pips_coarse.yaml \
                 'phase_fields.polymerizing[0].kappa=[1e-3, 2e-3, 4e-3]' \
                 'phase_fields.polymerizing[0].surface_affinity=[-0.01, -0.014, -0.02]' \
     --sweep 'phase_fields.polymerizing[0].crosslinking_rate=[1.56, 3.125, 6.25, 12.5, 25]' \
-    --x 'phase_fields.sol[0].kappa' --x-label '$\kappa$' \
-    --y 'phase_fields.polymerizing[0].crosslinking_rate' --y-label '$\gamma$' \
+    --x 'phase_fields.polymerizing[0].crosslinking_rate' --x-label '$\gamma$' \
+    --y 'phase_fields.sol[0].kappa' --y-label '$\kappa$' \
     --field 'protein.phi_gel=$\phi_{\rm gel}$' --save
 ```
 

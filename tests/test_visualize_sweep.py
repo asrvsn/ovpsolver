@@ -15,6 +15,7 @@ from ovpsolver.phase_field_system.visualize.layers import Layer
 from ovpsolver.phase_field_system.visualize.style import resolved
 from ovpsolver.phase_field_system.visualize.sweep import (
     VisualizeSweep,
+    equation,
     grid_axes,
     open_run,
 )
@@ -118,26 +119,41 @@ def test_the_command_line_needs_the_sweep_that_made_the_runs():
         VisualizeSweep().prepare({"sweep": [], "save": None})
 
 
-def test_a_grid_leaves_an_empty_cell_empty_and_shapes_every_cell_as_its_panel():
+def test_a_grid_labels_every_panel_and_gives_each_drawn_one_a_colourbar():
     style = resolved(PolymerizingB, {"panel_pixels": 40, "dpi": 40.0})
     panel = np.zeros((40, 60, 4), dtype=np.uint8)
+    span = (0.0, 0.5)
     figure = figures.grid(
         [[panel, None, panel], [panel, panel, panel]],
-        titles=[[None, "nothing saved", None], [None, None, None]],
-        column_labels=("1.5", "3", "6"),
-        row_labels=("0.002", "0.001"),
-        x_label=r"$\gamma$",
-        y_label=r"$\kappa$",
-        title="protein.phi_gel",
-        layer=Layer(name="protein.phi_gel", field="protein.phi_gel"),
-        value_range=(0.0, 1.0),
+        titles=[["$t = 0.4$", "nothing saved", "$t = 0.4$"], ["$t = 0.4$"] * 3],
+        row_labels=(r"$\kappa = 0.002$", r"$\kappa = 0.001$"),
+        column_labels=(r"$\gamma = 1.5$", r"$\gamma = 3$", r"$\gamma = 6$"),
+        ranges=[[span, None, span], [span] * 3],
+        layer=Layer(name="protein.phi_gel", field="protein.phi_gel", color="limegreen"),
         colorbar_label=r"$\phi_{\rm gel}$",
+        title=None,
         aspect=1.5,
         style=style,
     )
-    images = [axis for axis in figure.axes if axis.images]
-    # Five panels and the colourbar's ramp; the empty cell draws nothing.
-    assert len(images) == 6
+    texts = [text.get_text() for axis in figure.axes for text in axis.texts]
+    # Every cell, the empty one too, says where on the grid it is.
+    assert texts.count(r"$\kappa = 0.002$") == 3 and texts.count(r"$\gamma = 3$") == 2
+    # Five panels and five colourbars; the empty cell draws neither.
+    assert len([axis for axis in figure.axes if axis.images]) == 10
+    assert texts.count(r"$\phi_{\rm gel}$") == 5
     # Each panel's cell is its image's shape, 60 by 40 pixels at this dpi.
-    width, height = images[0].get_position().size * figure.get_size_inches() * figure.dpi
+    first = next(axis for axis in figure.axes if axis.images)
+    width, height = first.get_position().size * figure.get_size_inches() * figure.dpi
     assert (round(width), round(height)) == (60, 40)
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        (r"$\kappa$", r"$\kappa = 0.001$"),
+        ("crosslinking_rate", "crosslinking_rate = 0.001"),
+        (r"$\kappa$ (bulk)", r"$\kappa$ (bulk) = 0.001"),
+    ],
+)
+def test_a_label_and_its_value_are_one_equation_when_the_label_is_all_mathtext(label, expected):
+    assert equation(label, 1e-3) == expected

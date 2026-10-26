@@ -5,7 +5,7 @@ decides where on the page they go. The composite row has a column per time or
 run, each panel every phase at once, with colourbars down the right saying which
 hue was which. Split fields add a row per layer under it, each with a colourbar
 of its own, because each layer has its own range. A sweep is laid out as a grid
-instead, a panel per run on the sweep's two axes, over one colourbar.
+instead, a panel per run on the sweep's two axes, each with its own colourbar.
 
 Every size is read from the ``style`` a mixture carries; see :mod:`.style`.
 """
@@ -190,66 +190,61 @@ def grid(
     images: list[list[np.ndarray | None]],
     *,
     titles: list[list[str | None]],
-    column_labels: tuple[str, ...],
     row_labels: tuple[str, ...],
-    x_label: str,
-    y_label: str,
-    title: str | None,
+    column_labels: tuple[str, ...],
+    ranges: list[list[tuple[float, float] | None]],
     layer: Layer,
-    value_range: tuple[float, float],
     colorbar_label: str,
+    title: str | None,
     aspect: float,
     style: dict[str, Any],
 ) -> plt.Figure:
-    """Panels on the grid of two swept values, over one colourbar naming what they show.
+    """Panels on the grid of two swept values, each labelled on all four sides.
 
     ``images`` is rows from the top, each a list of columns from the left, and
-    ``None`` leaves a cell empty; ``titles`` is shaped alike, and a row of them is
-    given room above its panels only if any is set. Each column's label goes
-    under the bottom row with ``x_label`` under those, and each row's label to
-    the left with ``y_label`` beside those, as a plot's axes are labelled.
+    ``None`` leaves a cell empty; ``titles`` and ``ranges`` are shaped alike.
+    Every panel carries its own coordinates rather than sharing axes with its
+    neighbours: ``row_labels[row]`` to its left, ``column_labels[column]`` under
+    it, its title above it, and to its right a colourbar over its own range,
+    named ``colorbar_label``. An empty cell keeps its labels, which say which
+    run is missing, and its title, which says why, and has no colourbar.
 
-    One colourbar for the grid rather than one per panel, as a detail row has:
-    every panel is drawn against ``value_range``, so a colour means one value
-    anywhere on the figure. ``colorbar_label`` goes under it, where a horizontal
-    colourbar's label goes, and ``title``, if any, above the grid. Sized as
-    :func:`compose` sizes, in panel heights, so a panel's cell has its image's
-    shape.
+    ``title``, if any, goes above the grid. Sized as :func:`compose` sizes, in
+    panel heights, so a panel's cell has its image's shape. Every label is title
+    type, so ``font_scaling`` resizes the labels and the room they are given.
     """
 
     configure_tex_like_fonts()
-    n_rows, n_columns = len(images), len(column_labels)
-    if len(row_labels) != n_rows or len(titles) != n_rows:
-        raise ValueError("one row label and one row of titles per row of panels")
-    if any(len(row) != n_columns for row in (*images, *titles)):
-        raise ValueError("one column label, image and title per column of panels")
+    n_rows, n_columns = len(row_labels), len(column_labels)
+    if any(
+        len(cells) != n_rows or any(len(row) != n_columns for row in cells)
+        for cells in (images, titles, ranges)
+    ):
+        raise ValueError("one image, title and range per row label and column label")
 
     pixels, dpi = style["panel_pixels"], style["dpi"]
-    label_size = style["title_font_size"]
-    value_size = style["colorbar_label_font_size"]
-    pad = mpl.rcParams["axes.titlepad"]
-    label_band = _in_panels(pad + label_size, style)
-    value_band = _in_panels(pad + value_size, style)
-    titled = any(text is not None for row in titles for text in row)
-
-    heights: list[float] = []
-    if title is not None:
-        heights.append(label_band)
+    size = style["title_font_size"]
+    band = _in_panels(mpl.rcParams["axes.titlepad"] + size, style)
+    # The bar's two numbers are the colourbar label's size rather than the tick
+    # size a detail row uses, being next to labels in title type rather than
+    # under a panel; the bar is as thick, for that size, as a detail row's.
+    numbers = style["colorbar_label_font_size"]
+    bar = _in_panels(style["split_colorbar_height"] * numbers, style)
+    # Half a label's height between cells, so that one cell's labels are not
+    # read as its neighbour's.
+    gap = 0.5 * band
+    # A panel's cell is, across, its row label, the panel, its colourbar and the
+    # colourbar's name; down, its title, the panel and its column label.
+    widths: list[float] = []
+    panel_columns = []
+    for column in range(n_columns):
+        widths.extend(([gap] if column else []) + [band, aspect, bar, band])
+        panel_columns.append(len(widths) - 3)
+    heights: list[float] = [band] if title is not None else []
     panel_rows = []
-    for _ in range(n_rows):
-        if titled:
-            heights.append(value_band)
-        panel_rows.append(len(heights))
-        heights.append(1.0)
-    value_row = len(heights)
-    heights.extend((value_band, label_band))
-    heights.append(
-        _in_panels(style["split_colorbar_height"] * style["colorbar_tick_font_size"], style)
-    )
-    heights.append(label_band)
-    widths = [label_band, value_band] + [aspect] * n_columns
-    # Panels start after the y label's column and the row labels'.
-    first = 2
+    for row in range(n_rows):
+        heights.extend(([gap] if row else []) + [band, 1.0, band])
+        panel_rows.append(len(heights) - 2)
 
     figure = plt.figure(
         figsize=(pixels * sum(widths) / dpi, pixels * sum(heights) / dpi), dpi=dpi
@@ -267,31 +262,31 @@ def grid(
         hspace=0.0,
     )
     if title is not None:
-        _centred_text(figure.add_subplot(cells[0, first:]), title, label_size)
-    for row, panel_row in enumerate(panel_rows):
-        _centred_text(
-            figure.add_subplot(cells[panel_row, 1]), row_labels[row], value_size, rotation=90
-        )
-        for column in range(n_columns):
-            axis = figure.add_subplot(cells[panel_row, first + column])
+        _centred_text(figure.add_subplot(cells[0, :]), title, size)
+    for row, y in enumerate(panel_rows):
+        for column, x in enumerate(panel_columns):
+            axis = figure.add_subplot(cells[y, x])
             if images[row][column] is not None:
                 axis.imshow(images[row][column])
             if titles[row][column] is not None:
-                axis.set_title(titles[row][column], fontsize=value_size, color="black")
+                axis.set_title(titles[row][column], fontsize=size, color="black")
             axis.set_axis_off()
-    for column, label in enumerate(column_labels):
-        _centred_text(figure.add_subplot(cells[value_row, first + column]), label, value_size)
-    _centred_text(figure.add_subplot(cells[value_row + 1, first:]), x_label, label_size)
-    _centred_text(
-        figure.add_subplot(cells[panel_rows[0] : panel_rows[-1] + 1, 0]),
-        y_label,
-        label_size,
-        rotation=90,
-    )
-    _range_colorbar(
-        figure.add_subplot(cells[value_row + 2, first:]), layer, value_range, style
-    )
-    _centred_text(figure.add_subplot(cells[value_row + 3, first:]), colorbar_label, label_size)
+            _centred_text(
+                figure.add_subplot(cells[y, x - 1]), row_labels[row], size, rotation=90
+            )
+            _centred_text(figure.add_subplot(cells[y + 1, x]), column_labels[column], size)
+            if ranges[row][column] is not None:
+                _range_colorbar(
+                    figure.add_subplot(cells[y, x + 1]),
+                    layer,
+                    ranges[row][column],
+                    style,
+                    vertical=True,
+                    font_size=numbers,
+                )
+                _centred_text(
+                    figure.add_subplot(cells[y, x + 2]), colorbar_label, size, rotation=90
+                )
     return figure
 
 
@@ -350,29 +345,49 @@ def _range_colorbar(
     layer: Layer,
     value_range: tuple[float, float],
     style: dict[str, Any],
+    *,
+    vertical: bool = False,
+    font_size: float | None = None,
 ) -> None:
-    """A horizontal bar under one detail panel, labelled with its two ends."""
+    """A bar beside one panel, labelled with its two ends.
+
+    Under the panel by default, as a detail row has it; ``vertical`` stands it
+    beside the panel instead, low end at the bottom, with its numbers turned to
+    run along it. The numbers are ``font_size``, by default the style's
+    ``colorbar_tick_font_size``.
+    """
 
     vmin, vmax = value_range
     if layer.is_phase:
-        gradient = np.swapaxes(alpha_ramp(layer.color), 0, 1)
+        gradient = alpha_ramp(layer.color)
     else:
         gradient = scalar_rgba(
             np.linspace(vmin, vmax, 256),
             value_range,
             colormap=layer.colormap,
             style=style,
-        ).reshape(1, 256, 4)
-    axis.imshow(gradient, origin="lower", extent=(0.08, 0.92, 0.45, 0.78), aspect="auto")
-    for x, value, align in ((0.08, vmin, "left"), (0.92, vmax, "right")):
+        ).reshape(256, 1, 4)
+    if vertical:
+        axis.imshow(gradient, origin="lower", extent=(0.0, 1.0, 0.0, 1.0), aspect="auto")
+        ends = (((0.90, 0.08), vmin, "right", "bottom"), ((0.90, 0.92), vmax, "right", "top"))
+    else:
+        axis.imshow(
+            np.swapaxes(gradient, 0, 1),
+            origin="lower",
+            extent=(0.08, 0.92, 0.45, 0.78),
+            aspect="auto",
+        )
+        ends = (((0.08, 0.10), vmin, "left", "bottom"), ((0.92, 0.10), vmax, "right", "bottom"))
+    for (x, y), value, ha, va in ends:
         axis.text(
             x,
-            0.10,
+            y,
             f"{value:.{style['colorbar_decimals']}f}",
             color="black",
-            fontsize=style["colorbar_tick_font_size"],
-            ha=align,
-            va="bottom",
+            fontsize=style["colorbar_tick_font_size"] if font_size is None else font_size,
+            ha=ha,
+            va=va,
+            rotation=90 if vertical else 0,
             transform=axis.transAxes,
         )
     axis.set_axis_off()

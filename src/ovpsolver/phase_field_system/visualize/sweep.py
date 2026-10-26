@@ -24,10 +24,10 @@ does, the first values at the bottom left. Either may be left off, for the first
 address of the axis the other did not take; with neither, x is the last axis
 given, the one varying fastest through the runs, and y the first.
 
-Every panel is labelled with its own coordinates rather than sharing axes with
-its neighbours: its y value to its left, its x value under it, the time of its
-frame above it. ``--x-label`` and ``--y-label`` name the two as matplotlib text,
-so ``'$\\kappa$'`` labels a panel ``$\\kappa = 0.001$``; by default each is its
+Each row is labelled with its y value left of its first panel, and each column
+with its x value under its bottom panel; every panel is titled with the time of
+its frame. ``--x-label`` and ``--y-label`` name the two as matplotlib text, so
+``'$\\kappa$'`` labels a row ``$\\kappa = 0.001$``; by default each is its
 address's label in the run directories.
 
 A label reaches matplotlib exactly as the shell hands it over, since nothing in
@@ -305,9 +305,10 @@ class VisualizeSweep(EntryPoint):
             --field 'protein.phi_gel=$\\phi_{\\rm gel}$' --save
 
     Each panel is its run's last saved frame, drawn as --split-fields draws the
-    field, with its y value to its left, its x value under it, its time above it
-    and its own colourbar to its right. A run with nothing saved leaves its cell
-    empty, titled with why. Put labels in single quotes, which the shell passes
+    field, with its time above it and its own colourbar to its right; each row
+    is labelled with its y value on the left, and each column with its x value
+    along the bottom. A run with nothing saved leaves its cell empty, titled
+    with why. Put labels in single quotes, which the shell passes
     on untouched, as Python's r'' does; in double quotes it would expand $t as a
     variable.
     """
@@ -334,7 +335,7 @@ class VisualizeSweep(EntryPoint):
             "--x-label",
             dest="x_label",
             metavar="TEXT",
-            help="the x value's name under each panel, as matplotlib text, so "
+            help="the x value's name under each column, as matplotlib text, so "
             "'$\\gamma$' is a gamma; by default the address's label in the run "
             "directories",
         )
@@ -348,7 +349,7 @@ class VisualizeSweep(EntryPoint):
             "--y-label",
             dest="y_label",
             metavar="TEXT",
-            help="the y value's name left of each panel, as --x-label",
+            help="the y value's name beside each row, as --x-label",
         )
         parser.add_argument(
             "--field",

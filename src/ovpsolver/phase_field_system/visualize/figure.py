@@ -199,15 +199,15 @@ def grid(
     aspect: float,
     style: dict[str, Any],
 ) -> plt.Figure:
-    """Panels on the grid of two swept values, each labelled on all four sides.
+    """Panels on the grid of two swept values, the rows and columns labelled once each.
 
     ``images`` is rows from the top, each a list of columns from the left, and
     ``None`` leaves a cell empty; ``titles`` and ``ranges`` are shaped alike.
-    Every panel carries its own coordinates rather than sharing axes with its
-    neighbours: ``row_labels[row]`` to its left, ``column_labels[column]`` under
-    it, its title above it, and to its right a colourbar over its own range,
-    named ``colorbar_label``. An empty cell keeps its labels, which say which
-    run is missing, and its title, which says why, and has no colourbar.
+    Each row's label goes left of its first panel and each column's under its
+    bottom one, as a plot's ticks do, and no room is kept for them anywhere
+    else. Every panel has its title above it and to its right a colourbar over
+    its own range, named ``colorbar_label``; an empty cell keeps its title,
+    which says why, and has no colourbar.
 
     ``title``, if any, goes above the grid. Sized as :func:`compose` sizes, in
     panel heights, so a panel's cell has its image's shape. Every label is title
@@ -230,21 +230,23 @@ def grid(
     # under a panel; the bar is as thick, for that size, as a detail row's.
     numbers = style["colorbar_label_font_size"]
     bar = _in_panels(style["split_colorbar_height"] * numbers, style)
-    # Half a label's height between cells, so that one cell's labels are not
-    # read as its neighbour's.
+    # Half a label's height between cells, so that one panel's colourbar name
+    # is not read as its neighbour's, nor one panel's title as the panel above's.
     gap = 0.5 * band
-    # A panel's cell is, across, its row label, the panel, its colourbar and the
-    # colourbar's name; down, its title, the panel and its column label.
-    widths: list[float] = []
+    # Across: the row labels, then per column the panel, its colourbar and the
+    # colourbar's name. Down: per row its titles and panels, then the column
+    # labels.
+    widths: list[float] = [band]
     panel_columns = []
     for column in range(n_columns):
-        widths.extend(([gap] if column else []) + [band, aspect, bar, band])
+        widths.extend(([gap] if column else []) + [aspect, bar, band])
         panel_columns.append(len(widths) - 3)
     heights: list[float] = [band] if title is not None else []
     panel_rows = []
     for row in range(n_rows):
-        heights.extend(([gap] if row else []) + [band, 1.0, band])
-        panel_rows.append(len(heights) - 2)
+        heights.extend(([gap] if row else []) + [band, 1.0])
+        panel_rows.append(len(heights) - 1)
+    heights.append(band)
 
     figure = plt.figure(
         figsize=(pixels * sum(widths) / dpi, pixels * sum(heights) / dpi), dpi=dpi
@@ -271,10 +273,6 @@ def grid(
             if titles[row][column] is not None:
                 axis.set_title(titles[row][column], fontsize=size, color="black")
             axis.set_axis_off()
-            _centred_text(
-                figure.add_subplot(cells[y, x - 1]), row_labels[row], size, rotation=90
-            )
-            _centred_text(figure.add_subplot(cells[y + 1, x]), column_labels[column], size)
             if ranges[row][column] is not None:
                 _range_colorbar(
                     figure.add_subplot(cells[y, x + 1]),
@@ -287,6 +285,10 @@ def grid(
                 _centred_text(
                     figure.add_subplot(cells[y, x + 2]), colorbar_label, size, rotation=90
                 )
+    for row, y in enumerate(panel_rows):
+        _centred_text(figure.add_subplot(cells[y, 0]), row_labels[row], size, rotation=90)
+    for column, x in enumerate(panel_columns):
+        _centred_text(figure.add_subplot(cells[-1, x]), column_labels[column], size)
     return figure
 
 

@@ -119,7 +119,7 @@ def test_the_command_line_needs_the_sweep_that_made_the_runs():
         VisualizeSweep().prepare({"sweep": [], "save": None})
 
 
-def test_a_grid_labels_every_panel_and_gives_each_drawn_one_a_colourbar():
+def test_a_grid_labels_each_row_and_column_once_and_gives_each_drawn_panel_a_colourbar():
     style = resolved(PolymerizingB, {"panel_pixels": 40, "dpi": 40.0})
     panel = np.zeros((40, 60, 4), dtype=np.uint8)
     span = (0.0, 0.5)
@@ -136,8 +136,7 @@ def test_a_grid_labels_every_panel_and_gives_each_drawn_one_a_colourbar():
         style=style,
     )
     texts = [text.get_text() for axis in figure.axes for text in axis.texts]
-    # Every cell, the empty one too, says where on the grid it is.
-    assert texts.count(r"$\kappa = 0.002$") == 3 and texts.count(r"$\gamma = 3$") == 2
+    assert texts.count(r"$\kappa = 0.002$") == 1 and texts.count(r"$\gamma = 3$") == 1
     # Five panels and five colourbars; the empty cell draws neither.
     assert len([axis for axis in figure.axes if axis.images]) == 10
     assert texts.count(r"$\phi_{\rm gel}$") == 5

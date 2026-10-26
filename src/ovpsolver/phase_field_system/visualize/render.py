@@ -9,6 +9,7 @@ a figure.
 
 from __future__ import annotations
 
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -43,8 +44,8 @@ def grids(mesh: Mesh) -> dict[str, Any]:
     built here numbers its dofs as a run's own does.
     """
 
-    # Inline, here and in panel: the command line imports this module for every
-    # command, and pyvista is slow to import.
+    # Inline, here and in off_screen_plotter: the command line imports this
+    # module for every command, and pyvista is slow to import.
     import pyvista as pv
 
     vertices = fem.functionspace(mesh, ("Lagrange", 1))
@@ -225,6 +226,30 @@ def alpha_ramp(color: str) -> np.ndarray:
 ## Rasterization
 
 
+@cache
+def off_screen_plotter() -> Any:
+    """The one off-screen plotter every panel in the process is drawn on.
+
+    One per process rather than one per panel, because a plotter cannot be
+    given back: on macOS each holds an OpenGL context that ``close`` leaves
+    allocated, about 30 MB at the default panel size and outside the Python
+    heap, so the garbage collector never sees it and RSS does not count it. A
+    movie drawing a plotter per panel grew by that every panel until the
+    machine ran out of memory. Reused, it is one context, and a panel drawn on
+    it is pixel for pixel the one a fresh plotter would draw: :func:`panel`
+    sets everything a panel depends on each time.
+    """
+
+    import pyvista as pv
+
+    plotter = pv.Plotter(off_screen=True, border=False)
+    try:
+        plotter.enable_anti_aliasing("ssaa")
+    except Exception:
+        plotter.enable_anti_aliasing()
+    return plotter
+
+
 def panel(
     grid: Any,
     rgba: np.ndarray,
@@ -242,15 +267,10 @@ def panel(
     which the archived mesh is read without.
     """
 
-    import pyvista as pv
-
-    plotter = pv.Plotter(
-        off_screen=True, window_size=view["window_size"], border=False
-    )
-    try:
-        plotter.enable_anti_aliasing("ssaa")
-    except Exception:
-        plotter.enable_anti_aliasing()
+    plotter = off_screen_plotter()
+    # The last panel's meshes, and its size if it was of another mesh.
+    plotter.clear_actors()
+    plotter.window_size = view["window_size"]
 
     drawn = grid.copy(deep=True)
     if association == POINT:
@@ -295,6 +315,4 @@ def panel(
     plotter.camera.parallel_projection = True
     plotter.camera.parallel_scale = view["parallel_scale"]
     plotter.reset_camera_clipping_range()
-    image = np.asarray(plotter.screenshot(return_img=True))
-    plotter.close()
-    return image
+    return np.asarray(plotter.screenshot(return_img=True))

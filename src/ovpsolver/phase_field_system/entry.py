@@ -140,8 +140,8 @@ def load() -> None:
         import_module(module, __package__)
 
 
-def exit_without_teardown() -> "NoReturn":
-    """End the process now, skipping the exit hooks the imports installed.
+def exit_without_teardown(status: int = 0) -> "NoReturn":
+    """End the process now with ``status``, skipping the exit hooks the imports installed.
 
     Loading a saved run brings in dolfinx, and with it MPI, PETSc and VTK, each
     of which registers work for interpreter shutdown -- ``MPI_Finalize``,
@@ -157,10 +157,11 @@ def exit_without_teardown() -> "NoReturn":
     out of the call. Python's own buffers are flushed below, since
     :func:`os._exit` would drop them.
 
-    Called only from :func:`~ovpsolver.phase_field_system.cli.main`: a library
-    caller's process is theirs to end.
+    Called only from :func:`~ovpsolver.phase_field_system.cli.main`, after an
+    entry point that asks for it, and with status 1 after any that fails: a
+    library caller's process is theirs to end.
     """
 
     sys.stdout.flush()
     sys.stderr.flush()
-    os._exit(0)
+    os._exit(status)

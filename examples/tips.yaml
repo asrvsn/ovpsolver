@@ -54,7 +54,7 @@ solver:
     # Maximum number of CFL- or divergence-induced retries on a sub-step.
     max_retries: 5
     # Minimum time interval on any substep; use to catch vanishing substeps and halt early. 
-    min_dt: 0.0
+    min_dt: 3.0e-5
     # Minimum fraction of the step remaining to take before we "carry over" the remainder to the next step. Avoids expensive solves for tiny remainder steps.
     min_remainder_fraction: 0.1
     # Throw when positivity for the declared fields is violated below this floor. Should in principle be unreachable.

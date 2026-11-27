@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from typing import TYPE_CHECKING, Any
 
 from .entry import exit_without_teardown
@@ -49,7 +50,18 @@ def main(system_class: "type[PhaseFieldSystem]", argv: "list[str] | None" = None
 
     arguments = vars(parser.parse_args(argv))
     entry = entries[arguments.pop("entry_point")]
-    result = entry(system_class, **entry.prepare(arguments))
+    try:
+        result = entry(system_class, **entry.prepare(arguments))
+    except Exception:
+        # A failed command has already unwound its own cleanup -- every with and
+        # finally on the way up to here -- and written what it had. What is left
+        # is the interpreter's teardown, MPI_Finalize and PetscFinalize among it,
+        # which after a failure can hang instead of returning: the error printed,
+        # the process still there. Report the error as Python would and end with
+        # its status, so whatever is waiting on the process (a shell, a queue of
+        # runs) sees it end.
+        traceback.print_exc()
+        exit_without_teardown(1)
     if entry.exits_without_teardown:
         exit_without_teardown()
     return result

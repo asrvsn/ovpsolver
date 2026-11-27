@@ -38,7 +38,7 @@ dependencies:
   - mpi4py
 
   # Meshing, and drawing what came out
-  - gmsh
+  - python-gmsh  # the Python API; pulls in gmsh (library and binary)
   - matplotlib
   - seaborn
   - colorcet

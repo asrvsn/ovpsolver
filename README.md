@@ -95,7 +95,7 @@ As per the above, using
 
 ```bash
 python -m ovpsolver.model_b run examples/tips.yaml
-python -m ovpsolver.model_b visualize.phases_movie examples/scratch/tips/spec.yaml 0 100 --split --aux-fields water.v lipid.v lipid.aux_potential system.pressure 
+python -m ovpsolver.model_b visualize.phases_movie examples/scratch/tips/spec.yaml 0 100 --split --aux-fields water.v monomer.v monomer.aux_potential system.pressure 
 ```
 
 with the latter displaying various saved scalar quantities as declared in [tips.yaml](examples/tips.yaml), we obtain:

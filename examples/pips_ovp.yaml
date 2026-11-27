@@ -74,7 +74,10 @@ system:
   initial_phase_noise_sigma: 0.0
   k_B_T: 1.0
   dilatational_viscosity: 1.0e+5
-  save: ["pressure", "total_phase"]
+  save: [
+    # "pressure",
+    # "total_phase",
+  ]
 
   phase_fields:
     sol:
@@ -92,7 +95,11 @@ system:
         surface_drag: 1.0
         surface_flux_density: 0.0
         boundary_flux_density: 0.0
-        save: ["phi", "v", "aux_potential"]
+        save: [
+          "phi",
+          # "v",
+          # "aux_potential",
+        ]
 
     polymerizing:
       - name: protein
@@ -125,19 +132,19 @@ system:
           ratio: 1.05
         save: [
           "phi",
-          "v_s",
-          "v_g",
-          "aux_potential",
+          # "v_s",
+          # "v_g",
+          # "aux_potential",
           "phi_sol",
           "phi_gel",
-          "reaction_extent",
-          "c_x",
-          "u_bar",
-          "u_trace",
-          "gel_shear_modulus",
-          "gel_strain_moment",
-          "gel_hydrostatic_stress",
-          "gel_deviatoric_stress",
+          # "reaction_extent",
+          # "c_x",
+          # "u_bar",
+          # "u_trace",
+          # "gel_shear_modulus",
+          # "gel_strain_moment",
+          # "gel_hydrostatic_stress",
+          # "gel_deviatoric_stress",
         ]
 
   couplings:

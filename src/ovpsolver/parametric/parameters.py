@@ -314,7 +314,7 @@ class PairsParameters(Parameters):
     roster rather than of the schema::
 
         flory_huggins:
-          (water, lipid):
+          (water, monomer):
             chi: 5.0
 
     A block, unlike a :class:`~ovpsolver.parametric.parameter.Pairs`

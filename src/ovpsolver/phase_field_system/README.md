@@ -418,7 +418,7 @@ system:
     - name: water
       ...
       decay_rate: 2.0
-    - name: lipid
+    - name: monomer
       ...
       decay_rate: 0.5
 ```

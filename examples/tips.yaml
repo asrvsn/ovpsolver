@@ -141,7 +141,10 @@ system:
   # Like surface_permeability above; pressure enforces the saturation constraint sum_i phi_i = 1, subject to a concave stabilization term which makes the contribution to the dissipation potential effectively a bulk (dilatational) viscosity of mixture compression. A large value makes the mixture effectively incompressible, while the stabilization ensures the pressure remains well-posed off-support (within the inclusions). @src/ovpsolver/phase_field_system/system.py (PhaseFieldSystem.compression_penalty)
   dilatational_viscosity: 1.0e+5
   # Which system-wide fields to save.
-  save: ["pressure", "total_phase"]
+  save: [
+    # "pressure",
+    # "total_phase",
+  ]
 
   # The individual phase-fields and their physical parameters.
   # See the implementation of CHPhaseField, declaring a basic Cahn-Hilliard type phase field with logarithmic potential (mixing entropy), at: @src/ovpsolver/model_b/phase_field/field.py 
@@ -150,7 +153,7 @@ system:
       # Color for rendering phases in plot. 
       color: navy
       # Value of the flat homogeneous initial condition specified, subject to phase_noise above and the wetting-condition which is solved statically at step 0. So effectively, flat leading to a specified contact angle to the surfaces, given by surface_affinity below.
-      initial_volume_fraction: 0.7
+      initial_volume_fraction: 0.6
       # Interfacial penalty parameter. Note that this influences both the contact angle and the phase-interface width. Resolution of the latter should be considered against mesh_h above.
       kappa: 1.0e-3
       # Value of N in the mixing entropy contribution phi / N log phi. "Monomer" here and throughout indicates a single particle of species i, which may itself be a macromolecule, hence N.
@@ -166,7 +169,7 @@ system:
       # Bulk affinity omega phi in the Flory-Huggins free energy density of mixing.
       bulk_affinity: 0.0
       # Surface affinity, sets the contact angle at surfaces via kappa * grad phi . n + kBT (surf_affinity) = 0.
-      surface_affinity: 0.005
+      surface_affinity: 0.01
       # Tangential drag coefficient against surfaces.
       surface_drag: 1.0
       # Flux density (in units of concentration) per unit surface area. Actual flux is therefore (density) * dGamma_eps, the latter the diffuse surface measure. Imposed at surface normal up to surface_permeability above, see @src/ovpsolver/phase_field_system/phase_field/field.py (PhaseField.surface_crossing_penalty) .
@@ -174,11 +177,15 @@ system:
       # Same, at outer domain edge.
       boundary_flux_density: 0.0
       # Saved fields. Pass a random string here to see what is available.
-      save: ["phi", "v", "aux_potential"]
+      save: [
+        "phi",
+        # "v",
+        # "aux_potential",
+      ]
 
-    - name: lipid
+    - name: monomer
       color: orange
-      initial_volume_fraction: 0.3
+      initial_volume_fraction: 0.4
       kappa: 1.0e-3
       monomer_polymerization_degree: 1.0
       monomer_volume: 1.0
@@ -186,16 +193,20 @@ system:
       bulk_viscous_screening_length: 0.05
       surface_viscous_screening_length: 0.0 # 0.087
       bulk_affinity: 0.0
-      surface_affinity: -0.005
+      surface_affinity: -0.01
       surface_drag: 1.0
       surface_flux_density: 0.0
       boundary_flux_density: 0.0
-      save: ["phi", "v", "aux_potential"]
+      save: [
+        "phi",
+        # "v",
+        # "aux_potential",
+      ]
 
   # Energetic and dissipative couplings between the phases. Here, only the Flory-Huggins quadratic form.
   couplings:
     flory_huggins:
       # Specify unordered pairs of phases.
-      (water, lipid):
+      (water, monomer):
         # FH parameter chi. Here is above the threshold for spinodal decomposition, which will occur even in the absence of noise due to the strong gradients imposed by nonzero surface affinities.
         chi: 5.0

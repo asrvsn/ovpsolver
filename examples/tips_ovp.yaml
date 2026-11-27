@@ -76,7 +76,10 @@ system:
   initial_phase_noise_sigma: 0.0
   k_B_T: 1.0
   dilatational_viscosity: 1.0e+5
-  save: ["pressure", "total_phase"]
+  save: [
+    # "pressure",
+    # "total_phase",
+  ]
 
   phase_fields:
     - name: water
@@ -93,9 +96,13 @@ system:
       surface_drag: 1.0
       surface_flux_density: 0.0
       boundary_flux_density: 0.0
-      save: ["phi", "v", "aux_potential"]
+      save: [
+        "phi",
+        # "v",
+        # "aux_potential",
+      ]
 
-    - name: lipid
+    - name: monomer
       color: orange
       initial_volume_fraction: 0.4
       kappa: 1.0e-3
@@ -109,9 +116,13 @@ system:
       surface_drag: 1.0
       surface_flux_density: 0.0
       boundary_flux_density: 0.0
-      save: ["phi", "v", "aux_potential"]
+      save: [
+        "phi",
+        # "v",
+        # "aux_potential",
+      ]
 
   couplings:
     flory_huggins:
-      (water, lipid):
+      (water, monomer):
         chi: 5.0

@@ -140,7 +140,10 @@ system:
   initial_phase_noise_sigma: 0.0
   k_B_T: 1.0
   dilatational_viscosity: 1.0e+5
-  save: ["pressure", "total_phase"]
+  save: [
+    # "pressure",
+    # "total_phase",
+  ]
 
   phase_fields:
     sol:
@@ -158,7 +161,11 @@ system:
         surface_drag: 1.0
         surface_flux_density: 0.0
         boundary_flux_density: 0.0
-        save: ["phi", "v", "aux_potential"]
+        save: [
+          "phi",
+          # "v",
+          # "aux_potential",
+        ]
 
     # See the implementation of the PolymerizingPhaseField, declaring a polymerization-dependent free energy and gelation reaction within the irreversible substep, at: @src/ovpsolver/polymerizing_b/phase_field/field.py 
     polymerizing:
@@ -206,25 +213,25 @@ system:
           ratio: 1.05
         save: [
           "phi",
-          "v_s",
-          "v_g",
-          "aux_potential",
+          # "v_s",
+          # "v_g",
+          # "aux_potential",
           "phi_sol",
           "phi_gel",
           # Extent of crosslinking reaction in [0, 1], defined as the (pointwise) ratio of reacted sites to total sites.
-          "reaction_extent",
+          # "reaction_extent",
           # Concentration of unreacted crosslinking sites.
-          "c_x",
+          # "c_x",
           # Auxiliary variables encoding the internal polymerization state (these are related to moments of the k-mer distribution).
-          "u_bar",
-          "u_trace",
+          # "u_bar",
+          # "u_trace",
           # Shear modulus of the gel.
-          "gel_shear_modulus",
+          # "gel_shear_modulus",
           # History integral of the left Cauchy-Green tensor FF^T, evolved in the lab frame.
-          "gel_strain_moment",
+          # "gel_strain_moment",
           # These two quantities are derived from the previous two using the compressible neo-Hookean constitutive relation which we take for the polymer network comprising the gel phase.
-          "gel_hydrostatic_stress",
-          "gel_deviatoric_stress",
+          # "gel_hydrostatic_stress",
+          # "gel_deviatoric_stress",
         ]
 
   couplings:

@@ -113,11 +113,14 @@ class PhaseFieldSystemParameters(SaveableParameters):
         compressible the mixture is (it enters
         :meth:`~ovpsolver.phase_field_system.system.PhaseFieldSystem.compression_penalty`),
         so it belongs to the material rather than to the solver.
-    initial_phase_noise_sigma : the standard deviation of the noise added to
-        every phase once the initial condition is solved, which is how a run on
-        the unstable side of the spinodal seeds its decomposition rather than
-        waiting for the discretization to supply one. Zero leaves the solved
-        state alone.
+    initial_phase_noise_sigma : the standard deviation of the noise added, cell
+        by cell, to the far-field composition the initial wetting equilibrium
+        is solved against, which is how a run on the unstable side of the
+        spinodal seeds its decomposition rather than waiting for the
+        discretization to supply one. The surface stays wetted at the declared
+        angle against the rough bulk, and the solve smooths the noise below
+        ``sqrt(kappa)``, so the solved state's cell-wise deviations are smaller
+        than ``sigma``. Zero solves against the declared volume fractions.
     rng_seed : seeds every random draw the mixture makes -- the initial noise,
         and in a subclass possibly more. With the material rather than the
         solver, because reproducing a run means reproducing its initial

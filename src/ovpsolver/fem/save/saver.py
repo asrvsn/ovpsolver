@@ -354,9 +354,15 @@ class Saver:
 
         A reopened array is checked against what this spec would have allocated,
         because the frames already in it only mean something if they are the same
-        frames: a differing length means the step count changed, a differing
-        width that the field or the mesh did. Either is refused here, before
-        anything is written, rather than found as a shape error partway through.
+        frames: a differing width means the field or the mesh changed, and is
+        refused here, before anything is written, rather than found as a shape
+        error partway through. A longer length is a resumed run given more steps
+        than it was started with, and the array is grown to it, every frame kept;
+        a shorter one would cut off frames the run already has, and is refused.
+
+        Grown beside the original and moved over it, so a run stopped during the
+        copy leaves the original whole; the new rows start as the zeros a fresh
+        preallocation holds.
         """
 
         path = self.path / filename
@@ -370,12 +376,27 @@ class Saver:
                 f"did not save it"
             )
         array = np.lib.format.open_memmap(path, mode="r+")
+        if (
+            array.dtype == dtype
+            and tuple(array.shape[1:]) == tuple(shape[1:])
+            and array.shape[0] < shape[0]
+        ):
+            staged = path.with_name(f"{path.name}.growing")
+            grown = np.lib.format.open_memmap(
+                staged, mode="w+", dtype=dtype, shape=shape
+            )
+            grown[: array.shape[0]] = array
+            grown.flush()
+            del grown, array
+            os.replace(staged, path)
+            logger.info("grew %s to %d frames for the larger step count", path.name, shape[0])
+            array = np.lib.format.open_memmap(path, mode="r+")
         if tuple(array.shape) != tuple(shape) or array.dtype != dtype:
             raise ValueError(
                 f"cannot resume into {path}: it holds {array.shape} of "
                 f"{array.dtype} where this run wants {shape} of {dtype}. The "
                 f"preallocated length is set by n_steps and every_k, so resuming "
-                f"needs the step count the run was started with"
+                f"needs the step count the run was started with, or a larger one"
             )
         return array
 

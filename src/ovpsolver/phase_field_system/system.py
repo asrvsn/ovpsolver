@@ -565,19 +565,26 @@ class PhaseFieldSystem(
     ## Initial conditions
 
     def set_initial_conditions(self) -> None:
-        """The wetting equilibrium, roughened, for the phases; then the couplings."""
+        """The phases' wetting equilibrium against rough targets; then the couplings."""
 
         self.rates.pressure.x.array[:] = 0.0
-        initial = self.add_phase_noise(self.wetting_equilibrium())
+        targets = []
+        for field in self.phase_fields:
+            target = fem.Function(
+                field.next.phi.function_space, name=f"{field.name()}_phi_target"
+            )
+            target.x.array[:] = float(field.parameters.initial_volume_fraction)
+            targets.append(target)
+        initial = self.wetting_equilibrium(self.add_phase_noise(tuple(targets)))
         for field, phi in zip(self.phase_fields, initial, strict=True):
             field.set_initial_conditions(phi)
         for coupling in self.couplings:
             coupling.set_initial_conditions()
 
     def add_phase_noise(
-        self, initial: tuple[fem.Function, ...]
+        self, targets: tuple[fem.Function, ...]
     ) -> tuple[fem.Function, ...]:
-        """Roughen the initial composition, and put it back on the simplex.
+        """Roughen the far-field targets of the wetting equilibrium, on the simplex.
 
         A smooth state on the unstable side of the spinodal decomposes on
         whatever asymmetries the discretization happens to have, which is a slow
@@ -585,6 +592,15 @@ class PhaseFieldSystem(
         instability: independent Gaussian noise in every degree of freedom,
         clipped at zero because a negative volume fraction is not a composition,
         then rescaled by the pointwise sum so the mixture is saturated again.
+
+        The noise goes into the composition the bulk is anchored to, not onto
+        the solved state. The anchor is switched off on the surface
+        (:meth:`wetting_equilibrium`), so the solve's surface rows still balance
+        the contact-angle defect against the Korteweg term -- now against
+        whatever composition the noise puts next to them -- and the run starts
+        with the inclusions wetted at the declared angle. Noise added after the
+        solve would break that balance in the band, which is the state the
+        equilibrium boundary condition assumes at every instant.
 
         Rescaling rather than subtracting the mean, because saturation is a
         pointwise constraint and division restores it exactly everywhere. It
@@ -595,12 +611,12 @@ class PhaseFieldSystem(
 
         sigma = self.parameters.initial_phase_noise_sigma
         if sigma == 0.0:
-            return initial
+            return targets
 
         generator = self.parameters.rng
         total = None
-        for phi in initial:
-            values = phi.x.array
+        for target in targets:
+            values = target.x.array
             values += generator.normal(0.0, sigma, size=values.shape)
             np.clip(values, 0.0, None, out=values)
             total = values.copy() if total is None else total + values
@@ -610,21 +626,30 @@ class PhaseFieldSystem(
                 f"somewhere, so there is nothing to renormalize; the noise is "
                 f"comparable to the composition itself"
             )
-        for phi in initial:
-            phi.x.array[:] /= total
-            phi.x.scatter_forward()
-        self.report_initial_conditions(initial, "perturbed and renormalized")
-        return initial
+        for target in targets:
+            target.x.array[:] /= total
+            target.x.scatter_forward()
+        self.report_initial_conditions(targets, "targets perturbed and renormalized")
+        return targets
 
-    def wetting_equilibrium(self) -> tuple[fem.Function, ...]:
+    def wetting_equilibrium(
+        self, targets: tuple[fem.Function, ...]
+    ) -> tuple[fem.Function, ...]:
         """Solve for the composition at which the run's own driving force vanishes.
 
         The step should start from a state that already satisfies the constraint
         the pressure enforces and already wets the inclusions at the declared
         contact angle, rather than from a discontinuity the first step has to
-        resolve. Away from the diffuse surface the declared volume fractions are
-        soft far-field targets rather than integral constraints, which keeps the
-        problem local and linear.
+        resolve. Away from the diffuse surface the ``targets`` -- one cell-wise
+        composition per phase, the declared volume fractions as
+        :meth:`add_phase_noise` left them -- are soft far-field anchors rather
+        than integral constraints, which keeps the problem local and linear.
+        Where the anchor is off, on the surface, the solution is whatever the
+        contact angle requires given its neighbours: the equilibrium boundary
+        condition, held against whatever bulk the targets describe. In the bulk
+        the Korteweg term relaxes the targets below the length ``sqrt(kappa)``
+        at which it balances the anchor, so rough targets give a state rough
+        above that length and smooth below it.
 
         It has to be the *run's* equilibrium. The stationarity of a discrete
         energy is an equilibrium for whatever operator that discretisation
@@ -639,7 +664,7 @@ class PhaseFieldSystem(
         (:meth:`~ovpsolver.diffuse_domain.DiffuseDomain.contact_angle`), and the
         balance
 
-            chi_eps aux_potential + off_surface (phi - phi_0) + pressure = 0
+            chi_eps aux_potential + off_surface (phi - target) + pressure = 0
 
         which is the discrete force per unit volume the rate step would see with
         the bulk energy switched off. The solve is direct, so that combination
@@ -685,7 +710,9 @@ class PhaseFieldSystem(
 
         bilinear = ufl.as_ufl(0.0) * dx
         linear = ufl.as_ufl(0.0) * dx
-        for index, field in enumerate(self.phase_fields):
+        for index, (field, target) in enumerate(
+            zip(self.phase_fields, targets, strict=True)
+        ):
             phi, potential = trials[2 * index : 2 * index + 2]
             test, potential_test = tests[2 * index : 2 * index + 2]
             kappa = field.parameters.kappa
@@ -696,9 +723,7 @@ class PhaseFieldSystem(
                 + off_surface * phi * test
                 + pressure_trial * test
             ) * dx
-            linear += (
-                off_surface * float(field.parameters.initial_volume_fraction) * test
-            ) * dx
+            linear += (off_surface * target * test) * dx
 
             # aux_potential = -kappa laplace(phi) + C / chi_eps, term for term as
             # PhaseField.aux_residual writes it, with the Korteweg half of C in
@@ -741,9 +766,16 @@ class PhaseFieldSystem(
             phi.x.scatter_forward()
             low, high = function_min_max(phi)
             if low < -tolerance or high > 1.0 + tolerance:
+                sigma = self.parameters.initial_phase_noise_sigma
                 raise ValueError(
                     f"the wetting equilibrium for {field.name()} left the "
                     f"simplex: range=[{low:.6g}, {high:.6g}]"
+                    + (
+                        f", solved against targets roughened by "
+                        f"initial_phase_noise_sigma={sigma:.6g}"
+                        if sigma > 0.0
+                        else ""
+                    )
                 )
             initial.append(phi)
         self.report_initial_conditions(initial, "solved wetting equilibrium")

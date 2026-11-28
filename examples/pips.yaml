@@ -40,10 +40,10 @@
 # over four steps, and Newton loses quadratic convergence on the step where it
 # caps. Here 1/phi_min = 89 at t = 0.4 -- below the 107 that Newton still
 # handles cleanly -- and phi_min stays 113x above log_reg_delta, so the barrier
-# never linearizes. m = 8.9 at t = 0.4 and 23 asymptotically, while a thermal
+# never linearizes. m = 11.9 at t = 0.4 and 31 asymptotically, while a thermal
 # quench runs clean at 17-20.
 #
-# kappa = 1.0e-3 puts the fastest-growing wavelength at full cure at 0.108. Do
+# kappa = 7.5e-4 puts the fastest-growing wavelength at full cure at 0.094. Do
 # not lower it for speed: the growth rate scales only as kappa^-0.23 while m
 # scales as 1/kappa.
 #
@@ -150,7 +150,7 @@ system:
       - name: water
         color: navy
         initial_volume_fraction: 0.6
-        kappa: 1.0e-3
+        kappa: 7.5e-4
         monomer_polymerization_degree: 1.0
         monomer_volume: 1.0
         diffusivity: 1.0
@@ -176,7 +176,7 @@ system:
         color_gel: limegreen
         initial_volume_fraction: 0.4
         # The interfacial penalty applies to the sum: phi, so to sol and gel equally. This produces the Korteweg stress on gel, see e.g. https://link.aps.org/doi/10.1103/PhysRevE.101.032501.
-        kappa: 1.0e-3
+        kappa: 7.5e-4
         # Here the name really earns its keep. The effective polymerization degree of sol species is estimated by the number-average molecular weight * this N. The former is a function of the internal chemical state.
         monomer_polymerization_degree: 1.0
         # The monomer volume is assumed to be constant independent of the degree of crosslinking. Implementing, for example, cure-induced shrinkage therefore requires an extension.

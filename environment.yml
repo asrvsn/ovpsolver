@@ -43,6 +43,11 @@ dependencies:
   - seaborn
   - colorcet
   - pyvista
+  - ffmpeg  # phases_movie encodes its frames with it
+  # Software OpenGL, so pyvista also draws where there is no display or GPU (a
+  # server over ssh): VTK tries an X window, then EGL, then OSMesa, and Mesa
+  # dropped libOSMesa after 25.0. A mac draws through Cocoa and leaves it unused.
+  - mesalib=25.0.5
 
   # Building the C++ extension. nanobind and OpenMP are all CMakeLists.txt looks
   # for; vcpkg is honoured if VCPKG_ROOT happens to be set and is not needed.

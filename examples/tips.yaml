@@ -155,7 +155,7 @@ system:
       # Value of the flat homogeneous initial condition specified, subject to phase_noise above and the wetting-condition which is solved statically at step 0. So effectively, flat leading to a specified contact angle to the surfaces, given by surface_affinity below.
       initial_volume_fraction: 0.6
       # Interfacial penalty parameter. Note that this influences both the contact angle and the phase-interface width. Resolution of the latter should be considered against mesh_h above.
-      kappa: 1.0e-3
+      kappa: 7.5e-4
       # Value of N in the mixing entropy contribution phi / N log phi. "Monomer" here and throughout indicates a single particle of species i, which may itself be a macromolecule, hence N.
       monomer_polymerization_degree: 1.0
       # Volume relating concentrations and phase-fields by v c = phi. Used for imposing flux conditions in concentration.
@@ -186,7 +186,7 @@ system:
     - name: monomer
       color: orange
       initial_volume_fraction: 0.4
-      kappa: 1.0e-3
+      kappa: 7.5e-4
       monomer_polymerization_degree: 1.0
       monomer_volume: 1.0
       diffusivity: 1.0
